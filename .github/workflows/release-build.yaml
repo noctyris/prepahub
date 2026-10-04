@@ -23,6 +23,9 @@ jobs:
       - run: flutter analyze
       - name: Build release APK
         run: flutter build apk --release
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
       - name: Prepare artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk prepahub-${{ github.ref_name }}.apk
       - name: Create release

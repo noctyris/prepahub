@@ -16,20 +16,21 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "fr.circumpolar.prepahub"
+        val versionTag = (System.getenv("GIT_TAG") ?: "0.2.0").removePrefix("v").substringBefore("-")
+        versionName = versionTag
+        versionCode = System.getenv("BUILD_NUMBER")?.toIntOrNull()
+            ?: versionTag.split(".").let { p ->
+                p[0].toInt() * 10000 + p[1].toInt() * 100 + (p.getOrNull(2)?.toIntOrNull() ?: 0)
+            }
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
     }
 
     buildTypes {
