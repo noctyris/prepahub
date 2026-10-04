@@ -61,7 +61,7 @@ class _RootPageState extends State<RootPage> {
         destinations: const <Widget>[
           NavigationDestination(
             selectedIcon: Icon(Icons.pie_chart),
-            icon: Icon(Icons.home_outlined),
+            icon: Icon(Icons.pie_chart_outline),
             label: 'Notes',
           ),
           NavigationDestination(
