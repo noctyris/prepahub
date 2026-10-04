@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api/client.dart';
-import 'api/parse.dart';
-import 'login.dart';
-import "appview.dart";
+import 'notes.dart';
+import 'colloscope.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,7 +47,49 @@ class RootPage extends StatefulWidget {
 }
 
 class _RootPageState extends State<RootPage> {
-  bool loading = true;
+  int currentPageIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      bottomNavigationBar: NavigationBar(
+        onDestinationSelected: (int index) {
+          setState(() {
+            currentPageIndex = index;
+          });
+        },
+        selectedIndex: currentPageIndex,
+        destinations: const <Widget>[
+          NavigationDestination(
+            selectedIcon: Icon(Icons.pie_chart),
+            icon: Icon(Icons.home_outlined),
+            label: 'Notes',
+          ),
+          NavigationDestination(
+//            icon: Badge(label: Text('2'), child: Icon(Icons.calendar_month)),
+            icon: Icon(Icons.calendar_month),
+            label: 'Colloscope',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.abc),
+            label: '',
+          ),
+        ],
+      ),
+      body: <Widget>[
+        /// Notes page
+        NotesPage(),
+        
+        /// Colloscope
+        ColloscopePage(),
+        
+        /// Idk
+        const Center(child: Text('Rien pour le moment')),
+        ][currentPageIndex],
+    );
+  }
+}
+/*  bool loading = true;
   List<Semaine>? semaines;
   String? error;
 
@@ -180,4 +221,4 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
-}
+}*/
