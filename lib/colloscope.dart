@@ -8,8 +8,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api/parse.dart';
 
-// ───────────────────────── Formatage ─────────────────────────
-
 const _joursCourts = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const _mois = [
   'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
@@ -22,11 +20,8 @@ String _dayMonth(DateTime d) => '${d.day} ${_mois[d.month - 1]}';
 String _fullDate(DateTime d) =>
     '${_joursCourts[d.weekday - 1]} ${_dayMonth(d)} ${d.year}';
 
-/// Lundi (à minuit) de la semaine de [d].
 DateTime _monday(DateTime d) =>
     DateTime(d.year, d.month, d.day - (d.weekday - 1));
-
-// ───────────────────────── Stockage local ─────────────────────────
 
 Map<String, dynamic> _toJson(Colle c) => {
       'matiere': c.matiere,
@@ -57,7 +52,6 @@ class _Store {
         for (final e in data) _fromJson(Map<String, dynamic>.from(e as Map)),
       ];
     } catch (_) {
-      // Fichier illisible : on le met de côté pour ne pas l'écraser.
       try {
         await f.rename('${f.path}.bak');
       } catch (_) {}
@@ -65,11 +59,9 @@ class _Store {
     }
   }
 
-  /// JSON prêt à être exporté.
   static String encode(List<Colle> colles) => const JsonEncoder.withIndent('  ')
       .convert([for (final c in colles) _toJson(c)]);
 
-  /// Lit un export ; lève une exception si le contenu est invalide.
   static List<Colle> decode(String raw) {
     final data = jsonDecode(raw) as List;
     return [
@@ -85,8 +77,6 @@ class _Store {
     );
   }
 }
-
-// ───────────────────────── Page ─────────────────────────
 
 class ColloscopePage extends StatefulWidget {
   const ColloscopePage({super.key});
@@ -164,7 +154,6 @@ class _ColloscopePageState extends State<ColloscopePage> {
       if (bytes == null) return;
       final incoming = _Store.decode(utf8.decode(bytes));
 
-      // Fusion : on n'ajoute que les colles absentes (même matière + même date).
       final current = [..._colles ?? <Colle>[]];
       bool same(Colle a, Colle b) =>
           a.matiere == b.matiere && a.date == b.date;
@@ -216,7 +205,6 @@ class _ColloscopePageState extends State<ColloscopePage> {
     );
   }
 
-  /// Regroupe par semaine (lundi → dimanche), triées par date.
   List<SemaineColles> _weeks(List<Colle> colles) {
     final byWeek = <DateTime, List<Colle>>{};
     for (final c in colles) {
@@ -360,8 +348,6 @@ class _Empty extends StatelessWidget {
     );
   }
 }
-
-// ───────────────────────── Semaine & colle ─────────────────────────
 
 class _WeekSection extends StatelessWidget {
   final SemaineColles week;
@@ -516,8 +502,6 @@ class _ColleTile extends StatelessWidget {
     );
   }
 }
-
-// ───────────────────────── Formulaire ─────────────────────────
 
 class _ColleForm extends StatefulWidget {
   final Colle? initial;

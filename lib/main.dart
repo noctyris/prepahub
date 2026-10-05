@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'notes.dart';
 import 'colloscope.dart';
+import 'update.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,18 @@ class RootPage extends StatefulWidget {
 
 class _RootPageState extends State<RootPage> {
   int currentPageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(seconds: 4), _checkUpdate);
+  }
+
+  Future<void> _checkUpdate() async {
+    final u = await checkForUpdate();
+    if (u == null || !mounted) return;
+    showUpdateSnack(context, u);
+  }
 
   @override
   Widget build(BuildContext context) {
