@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -63,6 +65,18 @@ class _Store {
     }
   }
 
+  /// JSON prêt à être exporté.
+  static String encode(List<Colle> colles) => const JsonEncoder.withIndent('  ')
+      .convert([for (final c in colles) _toJson(c)]);
+
+  /// Lit un export ; lève une exception si le contenu est invalide.
+  static List<Colle> decode(String raw) {
+    final data = jsonDecode(raw) as List;
+    return [
+      for (final e in data) _fromJson(Map<String, dynamic>.from(e as Map)),
+    ];
+  }
+
   static Future<void> save(List<Colle> colles) async {
     final f = await _file();
     await f.writeAsString(
@@ -116,6 +130,59 @@ class _ColloscopePageState extends State<ColloscopePage> {
       await _Store.save(_colles!);
     } catch (_) {
       if (mounted) _snack("Impossible d'enregistrer le colloscope");
+    }
+  }
+
+  Future<void> _export() async {
+    final colles = _colles ?? [];
+    if (colles.isEmpty) {
+      _snack('Rien à exporter');
+      return;
+    }
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Exporter le colloscope',
+        fileName: 'colloscope.json',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: Uint8List.fromList(utf8.encode(_Store.encode(colles))),
+      );
+      if (path != null && mounted) _snack('Colloscope exporté');
+    } catch (_) {
+      if (mounted) _snack("Export impossible");
+    }
+  }
+
+  Future<void> _import() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      final bytes = res?.files.single.bytes;
+      if (bytes == null) return;
+      final incoming = _Store.decode(utf8.decode(bytes));
+
+      // Fusion : on n'ajoute que les colles absentes (même matière + même date).
+      final current = [..._colles ?? <Colle>[]];
+      bool same(Colle a, Colle b) =>
+          a.matiere == b.matiere && a.date == b.date;
+      var added = 0;
+      for (final c in incoming) {
+        if (!current.any((x) => same(x, c))) {
+          current.add(c);
+          added++;
+        }
+      }
+      await _commit(current);
+      if (mounted) {
+        _snack(added == 0
+            ? 'Aucune nouvelle colle'
+            : '$added colle${added > 1 ? 's' : ''} importée${added > 1 ? 's' : ''}');
+      }
+    } catch (_) {
+      if (mounted) _snack('Fichier invalide');
     }
   }
 
@@ -177,7 +244,33 @@ class _ColloscopePageState extends State<ColloscopePage> {
       ),
       body: CustomScrollView(
         slivers: [
-          const SliverAppBar.large(title: Text('Colloscope')),
+          SliverAppBar.large(
+            title: const Text('Colloscope'),
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: 'Plus',
+                onSelected: (v) => v == 'export' ? _export() : _import(),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'export',
+                    child: ListTile(
+                      leading: Icon(Icons.upload_file_outlined),
+                      title: Text('Exporter'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'import',
+                    child: ListTile(
+                      leading: Icon(Icons.download_outlined),
+                      title: Text('Importer'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
           if (colles == null)
             const SliverFillRemaining(
               hasScrollBody: false,
