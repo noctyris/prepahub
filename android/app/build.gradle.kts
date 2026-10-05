@@ -13,9 +13,9 @@ val keyProps = Properties().apply {
 
 android {
     namespace = "fr.circumpolar.prepahub"
-//    compileSdk = flutter.compileSdkVersion
-    compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    compileSdk = flutter.compileSdkVersion
+//    compileSdk = 36
+      ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
