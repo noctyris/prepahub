@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'notes.dart';
+import "edt.dart";
 import 'colloscope.dart';
 import 'update.dart';
 
@@ -21,11 +22,12 @@ class PrepaHubApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
-        final light = lightDynamic?.harmonized() ??
+        final light =
+            lightDynamic?.harmonized() ??
             ColorScheme.fromSeed(seedColor: _seed);
-        final dark = darkDynamic?.harmonized() ??
-            ColorScheme.fromSeed(
-                seedColor: _seed, brightness: Brightness.dark);
+        final dark =
+            darkDynamic?.harmonized() ??
+            ColorScheme.fromSeed(seedColor: _seed, brightness: Brightness.dark);
         return MaterialApp(
           title: 'PrepaHub',
           debugShowCheckedModeBanner: false,
@@ -78,26 +80,23 @@ class _RootPageState extends State<RootPage> {
             label: 'Notes',
           ),
           NavigationDestination(
-//            icon: Badge(label: Text('2'), child: Icon(Icons.calendar_month)),
+            //            icon: Badge(label: Text('2'), child: Icon(Icons.calendar_month)),
             icon: Icon(Icons.calendar_month),
             label: 'Colloscope',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.abc),
-            label: '',
-          ),
+          NavigationDestination(icon: Icon(Icons.abc), label: ''),
         ],
       ),
       body: <Widget>[
         /// Notes page
         NotesPage(),
-        
+
         /// Colloscope
         ColloscopePage(),
-        
-        /// Idk
-        const Center(child: Text('Rien pour le moment')),
-        ][currentPageIndex],
+
+        /// Edt
+        EDTPage(),
+      ][currentPageIndex],
     );
   }
 }
