@@ -26,6 +26,22 @@ class Semaine {
            required this.notes});
 }
 
+class SemaineColles {
+    final int? numero;
+    final String debut;
+    final String fin;
+    final List<Colle> colles;
+    SemaineColles({ this.numero, required this.debut, required this.fin, required this.colles });
+}
+
+class Colle {
+    final String matiere;
+    final DateTime date;
+    final String prof;
+    final String salle;
+    Colle({ required this.matiere, required this.date, required this.prof, required this.salle });
+}
+
 double? parseFr(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
 
 ({String prof, Rang rang, double? moyenne, double? et}) parseDetail(String d) {
