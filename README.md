@@ -22,7 +22,7 @@ Built with [Flutter](https://flutter.dev) (Dart), with Material You (Material 3)
 * [ ] Error handling (invalid credentials, no network, spinners…)
 * [ ] Builds for multiple phone architectures
 * [ ] Offline caching of grades
-* [ ] Offline _colles_ (oral exams) schedule
+* [x] Offline timetable and _khôlle_ (oral exam) schedule
 * [x] Keep credentials between app launches
 * [x] Material You dynamic color
 

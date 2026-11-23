@@ -119,7 +119,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
     try {
       await ColloscopeStore.save(_colles!);
     } catch (_) {
-      if (mounted) _snack("Impossible d'enregistrer le colloscope");
+      if (mounted) _snack("Impossible d'enregistrer les khôlles");
     }
   }
 
@@ -131,13 +131,13 @@ class _ColloscopePageState extends State<ColloscopePage> {
     }
     try {
       final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Exporter le colloscope',
-        fileName: 'colloscope.json',
+        dialogTitle: 'Exporter les khôlles',
+        fileName: 'kholles.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
         bytes: Uint8List.fromList(utf8.encode(ColloscopeStore.encode(colles))),
       );
-      if (path != null && mounted) _snack('Colloscope exporté');
+      if (path != null && mounted) _snack('Khôlles exportées');
     } catch (_) {
       if (mounted) _snack("Export impossible");
     }
@@ -167,8 +167,8 @@ class _ColloscopePageState extends State<ColloscopePage> {
       await _commit(current);
       if (mounted) {
         _snack(added == 0
-            ? 'Aucune nouvelle colle'
-            : '$added colle${added > 1 ? 's' : ''} importée${added > 1 ? 's' : ''}');
+            ? 'Aucune nouvelle khôlle'
+            : '$added khôlle${added > 1 ? 's' : ''} importée${added > 1 ? 's' : ''}');
       }
     } catch (_) {
       if (mounted) _snack('Fichier invalide');
@@ -197,7 +197,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
     await _commit([..._colles!]..remove(c));
     if (!mounted) return;
     _snack(
-      'Colle de ${c.matiere} supprimée',
+      'Khôlle de ${c.matiere} supprimée',
       action: SnackBarAction(
         label: 'Annuler',
         onPressed: () => _commit([..._colles!, c]),
@@ -233,7 +233,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar.large(
-            title: const Text('Colloscope'),
+            title: const Text('Khôlles'),
             actions: [
               PopupMenuButton<String>(
                 tooltip: 'Plus',
@@ -310,7 +310,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
         ExpansionTile(
           shape: const Border(),
           collapsedShape: const Border(),
-          title: const Text('Colles passées'),
+          title: const Text('Khôlles passées'),
           subtitle: Text(
               '${past.fold<int>(0, (n, w) => n + w.colles.length)} au total'),
           childrenPadding: const EdgeInsets.only(top: 8),
@@ -335,10 +335,10 @@ class _Empty extends StatelessWidget {
           children: [
             Icon(Icons.event_note_rounded, size: 64, color: cs.primary),
             const SizedBox(height: 16),
-            Text('Aucune colle', style: tt.headlineSmall),
+            Text('Aucune khôlle', style: tt.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              'Recopie ton colloscope papier avec le bouton « Ajouter ».',
+              'Recopie ton planning de khôlles avec le bouton « Ajouter ».',
               textAlign: TextAlign.center,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
@@ -544,7 +544,7 @@ class _ColleFormState extends State<_ColleForm> {
       initialDate: _date,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      helpText: 'Date de la colle',
+      helpText: 'Date de la khôlle',
       cancelText: 'Annuler',
       confirmText: 'OK',
     );
@@ -556,7 +556,7 @@ class _ColleFormState extends State<_ColleForm> {
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_date),
-      helpText: 'Heure de la colle',
+      helpText: 'Heure de la khôlle',
       cancelText: 'Annuler',
       confirmText: 'OK',
       builder: (ctx, child) => MediaQuery(
@@ -598,7 +598,7 @@ class _ColleFormState extends State<_ColleForm> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(editing ? 'Modifier la colle' : 'Nouvelle colle',
+          Text(editing ? 'Modifier la khôlle' : 'Nouvelle khôlle',
               style: tt.headlineSmall),
           const SizedBox(height: 20),
           TextField(

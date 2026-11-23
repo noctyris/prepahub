@@ -211,7 +211,7 @@ class _SemaineCard extends StatelessWidget {
         initiallyExpanded: expanded,
         title: Text('Semaine ${semaine.numero ?? '?'}', style: tt.titleMedium),
         subtitle: Text(
-          '$dates · $n colle${n > 1 ? 's' : ''}',
+          '$dates · $n note${n > 1 ? 's' : ''}',
           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

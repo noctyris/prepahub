@@ -22,7 +22,7 @@ Réalisée avec [Flutter](https://flutter.dev) (Dart), avec support Material You
 * [ ] Gestion des erreurs (identifiants invalides, pas de réseau, spinners…)
 * [ ] Builds pour plusieurs architectures de téléphone
 * [ ] Cache hors-ligne des notes
-* [ ] Emploi du temps des colles hors-ligne
+* [x] Emploi du temps des khôlles hors-ligne
 * [x] Conserver les identifiants entre les lancements
 * [x] Couleurs dynamiques Material You
 
