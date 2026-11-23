@@ -37,7 +37,7 @@ Colle _fromJson(Map<String, dynamic> j) => Colle(
       salle: (j['salle'] as String?) ?? '',
     );
 
-class _Store {
+class ColloscopeStore {
   static Future<File> _file() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/colloscope.json');
@@ -100,7 +100,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
   Future<void> _load() async {
     List<Colle> c;
     try {
-      c = await _Store.load();
+      c = await ColloscopeStore.load();
     } catch (_) {
       c = [];
     }
@@ -117,7 +117,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
   Future<void> _commit(List<Colle> next) async {
     setState(() => _colles = _sorted(next));
     try {
-      await _Store.save(_colles!);
+      await ColloscopeStore.save(_colles!);
     } catch (_) {
       if (mounted) _snack("Impossible d'enregistrer le colloscope");
     }
@@ -135,7 +135,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
         fileName: 'colloscope.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
-        bytes: Uint8List.fromList(utf8.encode(_Store.encode(colles))),
+        bytes: Uint8List.fromList(utf8.encode(ColloscopeStore.encode(colles))),
       );
       if (path != null && mounted) _snack('Colloscope exporté');
     } catch (_) {
@@ -152,7 +152,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
       );
       final bytes = res?.files.single.bytes;
       if (bytes == null) return;
-      final incoming = _Store.decode(utf8.decode(bytes));
+      final incoming = ColloscopeStore.decode(utf8.decode(bytes));
 
       final current = [..._colles ?? <Colle>[]];
       bool same(Colle a, Colle b) =>

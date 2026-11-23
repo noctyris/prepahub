@@ -46,14 +46,26 @@ extension DateTimeExtension on DateTime {
 }
 
 Cours _fromJson(Map<String, dynamic> j) => Cours(
-  matiere: j['matiere'] as String,
-  jour: j['jour'] as int,
-  heureDebut: j['heureDebut'] as String,
-  heureFin: j['heureFin'] as String,
-  restrictions: j['restrictions'] as int,
-  prof: j['prof'] as String,
-  salle: j['salle'] as String,
+  matiere: (j['matiere'] as String?) ?? '',
+  jour: (j['jour'] as num?)?.toInt() ?? 1,
+  heureDebut: (j['heureDebut'] as String?) ?? '08:00',
+  heureFin: (j['heureFin'] as String?) ?? '10:00',
+  restrictions: (j['restrictions'] as num?)?.toInt() ?? 0,
+  prof: (j['prof'] as String?) ?? '',
+  salle: (j['salle'] as String?) ?? '',
+  semestre: (j['semestre'] as num?)?.toInt() ?? 1,
 );
+
+Map<String, dynamic> _toJson(Cours c) => {
+  'matiere': c.matiere,
+  'jour': c.jour,
+  'heureDebut': c.heureDebut,
+  'heureFin': c.heureFin,
+  'restrictions': c.restrictions,
+  'prof': c.prof,
+  'salle': c.salle,
+  'semestre': c.semestre,
+};
 
 class EdtStore {
   static Future<File> _file() async {
@@ -75,5 +87,13 @@ class EdtStore {
       } catch (_) {}
       return [];
     }
+  }
+
+  static Future<void> save(List<Cours> cours) async {
+    final f = await _file();
+    await f.writeAsString(
+      jsonEncode([for (final c in cours) _toJson(c)]),
+      flush: true,
+    );
   }
 }

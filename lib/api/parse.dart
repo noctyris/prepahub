@@ -70,6 +70,7 @@ class Cours {
   final int restrictions;
   final String prof;
   final String salle;
+  final int semestre;
   Cours({
     required this.matiere,
     required this.jour,
@@ -78,7 +79,13 @@ class Cours {
     required this.restrictions,
     required this.prof,
     required this.salle,
+    this.semestre = 1,
   });
+
+  /// Masque des semaines où le cours a lieu (bit 0 = semaine 1).
+  /// `0` signifie que le cours a lieu toutes les semaines.
+  bool appliesToWeek(int semaine) =>
+      restrictions == 0 || (restrictions & (1 << (semaine - 1))) != 0;
 }
 
 double? parseFr(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
