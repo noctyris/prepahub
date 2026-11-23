@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'notes.dart';
-import "edt.dart";
-import 'colloscope.dart';
+import 'edt.dart';
 import 'update.dart';
 
 void main() {
@@ -80,21 +79,17 @@ class _RootPageState extends State<RootPage> {
             label: 'Notes',
           ),
           NavigationDestination(
-            //            icon: Badge(label: Text('2'), child: Icon(Icons.calendar_month)),
-            icon: Icon(Icons.calendar_month),
-            label: 'Colloscope',
+            selectedIcon: Icon(Icons.calendar_month),
+            icon: Icon(Icons.calendar_month_outlined),
+            label: 'Emploi du temps',
           ),
-          NavigationDestination(icon: Icon(Icons.abc), label: ''),
         ],
       ),
       body: <Widget>[
         /// Notes page
         NotesPage(),
 
-        /// Colloscope
-        ColloscopePage(),
-
-        /// Edt
+        /// Timetable and khôlles
         EDTPage(),
       ][currentPageIndex],
     );
