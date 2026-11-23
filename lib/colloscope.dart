@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'api/parse.dart';
@@ -130,14 +130,13 @@ class _ColloscopePageState extends State<ColloscopePage> {
       return;
     }
     try {
-      final path = await FilePicker.platform.saveFile(
+      final uri = await FilePicker.saveFile(
         dialogTitle: 'Exporter les khôlles',
         fileName: 'kholles.json',
-        type: FileType.custom,
-        allowedExtensions: const ['json'],
+        mimeType: 'application/json',
         bytes: Uint8List.fromList(utf8.encode(ColloscopeStore.encode(colles))),
       );
-      if (path != null && mounted) _snack('Khôlles exportées');
+      if (uri != null && mounted) _snack('Khôlles exportées');
     } catch (_) {
       if (mounted) _snack("Export impossible");
     }
@@ -145,14 +144,15 @@ class _ColloscopePageState extends State<ColloscopePage> {
 
   Future<void> _import() async {
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
+        dialogTitle: 'Importer les khôlles',
         type: FileType.custom,
         allowedExtensions: const ['json'],
-        withData: true,
       );
-      final bytes = res?.files.single.bytes;
-      if (bytes == null) return;
-      final incoming = ColloscopeStore.decode(utf8.decode(bytes));
+      if (file == null) return;
+      final incoming = ColloscopeStore.decode(
+        utf8.decode(await file.readAsBytes()),
+      );
 
       final current = [..._colles ?? <Colle>[]];
       bool same(Colle a, Colle b) =>
