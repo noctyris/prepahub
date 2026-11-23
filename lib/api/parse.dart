@@ -13,8 +13,14 @@ class Note {
   final Rang rang;
   final double? moyenne;
   final double? ecartType;
-  Note({required this.matiere, this.note, required this.professeur,
-        required this.rang, this.moyenne, this.ecartType});
+  Note({
+    required this.matiere,
+    this.note,
+    required this.professeur,
+    required this.rang,
+    this.moyenne,
+    this.ecartType,
+  });
 }
 
 class Semaine {
@@ -22,24 +28,57 @@ class Semaine {
   final String debut;
   final String fin;
   final List<Note> notes;
-  Semaine({this.numero, required this.debut, required this.fin,
-           required this.notes});
+  Semaine({
+    this.numero,
+    required this.debut,
+    required this.fin,
+    required this.notes,
+  });
 }
 
 class SemaineColles {
-    final int? numero;
-    final String debut;
-    final String fin;
-    final List<Colle> colles;
-    SemaineColles({ this.numero, required this.debut, required this.fin, required this.colles });
+  final int? numero;
+  final String debut;
+  final String fin;
+  final List<Colle> colles;
+  SemaineColles({
+    this.numero,
+    required this.debut,
+    required this.fin,
+    required this.colles,
+  });
 }
 
 class Colle {
-    final String matiere;
-    final DateTime date;
-    final String prof;
-    final String salle;
-    Colle({ required this.matiere, required this.date, required this.prof, required this.salle });
+  final String matiere;
+  final DateTime date;
+  final String prof;
+  final String salle;
+  Colle({
+    required this.matiere,
+    required this.date,
+    required this.prof,
+    required this.salle,
+  });
+}
+
+class Cours {
+  final String matiere;
+  final int jour;
+  final String heureDebut;
+  final String heureFin;
+  final int restrictions;
+  final String prof;
+  final String salle;
+  Cours({
+    required this.matiere,
+    required this.jour,
+    required this.heureDebut,
+    required this.heureFin,
+    required this.restrictions,
+    required this.prof,
+    required this.salle,
+  });
 }
 
 double? parseFr(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
@@ -116,17 +155,20 @@ List<Semaine> parseNotes(String html) {
         final noteTxt = span.text.trim();
         final detail = span.attributes['title'] ?? '';
         final d = parseDetail(detail);
-        notes.add(Note(
-          matiere: matieres[i],
-          note: parseFr(noteTxt),
-          professeur: d.prof,
-          rang: d.rang,
-          moyenne: d.moyenne,
-          ecartType: d.et,
-        ));
+        notes.add(
+          Note(
+            matiere: matieres[i],
+            note: parseFr(noteTxt),
+            professeur: d.prof,
+            rang: d.rang,
+            moyenne: d.moyenne,
+            ecartType: d.et,
+          ),
+        );
       }
-      semaines.add(Semaine(numero: s.numero, debut: s.debut,
-                           fin: s.fin, notes: notes));
+      semaines.add(
+        Semaine(numero: s.numero, debut: s.debut, fin: s.fin, notes: notes),
+      );
     }
   }
   return semaines;
