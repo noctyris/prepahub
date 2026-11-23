@@ -33,6 +33,8 @@ const _mois = [
   'déc.',
 ];
 
+const _prefSemestre = 'edt_semestre';
+
 String _two(int n) => n.toString().padLeft(2, '0');
 
 String _formatTime(TimeOfDay t) => '${_two(t.hour)}h${_two(t.minute)}';
@@ -73,8 +75,6 @@ class EDTPage extends StatefulWidget {
 }
 
 class _EDTPageState extends State<EDTPage> {
-  static const _prefSemestre = 'edt_semestre';
-
   List<Cours>? _cours;
   List<Colle>? _colles;
   DateTime _monday = _mondayOf(DateTime.now());
@@ -119,55 +119,6 @@ class _EDTPageState extends State<EDTPage> {
     });
   }
 
-  Future<void> _saveCours(List<Cours> next) async {
-    setState(() => _cours = next);
-    try {
-      await EdtStore.save(next);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Impossible d'enregistrer l'emploi du temps"),
-        ),
-      );
-    }
-  }
-
-  Future<void> _editCours([Cours? old]) async {
-    final res = await showModalBottomSheet<Cours>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (_) => _CoursForm(
-        initial: old,
-        semestre: _semestre,
-        onDelete: old == null ? null : () => _deleteCours(old),
-      ),
-    );
-    if (res == null || !mounted) return;
-    final list = [...(_cours ?? const <Cours>[])];
-    if (old != null) list.remove(old);
-    list.add(res);
-    await _saveCours(list);
-  }
-
-  Future<void> _deleteCours(Cours c) async {
-    await _saveCours([...(_cours ?? const <Cours>[])]..remove(c));
-    if (!mounted) return;
-    final m = ScaffoldMessenger.of(context);
-    m.clearSnackBars();
-    m.showSnackBar(
-      SnackBar(
-        content: Text('Cours de ${c.matiere} supprimé'),
-        action: SnackBarAction(
-          label: 'Annuler',
-          onPressed: () => _saveCours([...(_cours ?? const <Cours>[]), c]),
-        ),
-      ),
-    );
-  }
-
   Future<void> _chooseSemestre(int semestre) async {
     if (semestre == _semestre) return;
     final label = semestre == 1 ? '1er semestre' : '2e semestre';
@@ -197,6 +148,19 @@ class _EDTPageState extends State<EDTPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_prefSemestre, semestre);
     } catch (_) {}
+  }
+
+  Future<void> _openEditor() async {
+    final cours = _cours;
+    if (cours == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            _EdtEditPage(initialCours: cours, initialSemestre: _semestre),
+      ),
+    );
+    if (!mounted) return;
+    await _load();
   }
 
   void _shiftWeek(int weeks) {
@@ -244,11 +208,6 @@ class _EDTPageState extends State<EDTPage> {
     );
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editCours(),
-        icon: const Icon(Icons.add),
-        label: const Text('Ajouter un cours'),
-      ),
       body: CustomScrollView(
         slivers: [
           SliverAppBar.large(
@@ -260,6 +219,11 @@ class _EDTPageState extends State<EDTPage> {
                   icon: const Icon(Icons.today),
                   onPressed: _goToCurrentWeek,
                 ),
+              IconButton(
+                tooltip: "Modifier l'emploi du temps",
+                icon: const Icon(Icons.edit_calendar_outlined),
+                onPressed: _cours == null ? null : _openEditor,
+              ),
               IconButton(
                 tooltip: 'Planning des khôlles',
                 icon: const Icon(Icons.record_voice_over_outlined),
@@ -380,7 +344,7 @@ class _EDTPageState extends State<EDTPage> {
           date: date,
           isToday: _sameDay(date, now),
           entries: entries,
-          onEdit: _editCours,
+          onEdit: (_) => _openEditor(),
           onColles: _openColles,
         ),
       );
@@ -624,8 +588,8 @@ class _EmptyWeek extends StatelessWidget {
             Text(
               hasCours
                   ? 'Aucun cours ni khôlle pour cette semaine.'
-                  : 'Ajoute tes cours avec le bouton « Ajouter un cours », '
-                        'et tes khôlles via le bouton en haut.',
+                  : 'Ajoute tes cours depuis la page de modification '
+                        '(icône en haut), et tes khôlles via le bouton en haut.',
               textAlign: TextAlign.center,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
@@ -633,6 +597,200 @@ class _EmptyWeek extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _EdtEditPage extends StatefulWidget {
+  final List<Cours> initialCours;
+  final int initialSemestre;
+
+  const _EdtEditPage({
+    required this.initialCours,
+    required this.initialSemestre,
+  });
+
+  @override
+  State<_EdtEditPage> createState() => _EdtEditPageState();
+}
+
+class _EdtEditPageState extends State<_EdtEditPage> {
+  late List<Cours> _cours;
+  late int _semestre;
+
+  @override
+  void initState() {
+    super.initState();
+    _cours = [...widget.initialCours];
+    _semestre = widget.initialSemestre;
+  }
+
+  Future<void> _setSemestre(int semestre) async {
+    if (semestre == _semestre) return;
+    setState(() => _semestre = semestre);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_prefSemestre, semestre);
+    } catch (_) {}
+  }
+
+  Future<void> _saveCours(List<Cours> next) async {
+    setState(() => _cours = next);
+    try {
+      await EdtStore.save(next);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Impossible d'enregistrer l'emploi du temps"),
+        ),
+      );
+    }
+  }
+
+  Future<void> _editCours([Cours? old]) async {
+    final res = await showModalBottomSheet<Cours>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => _CoursForm(
+        initial: old,
+        semestre: _semestre,
+        onDelete: old == null ? null : () => _deleteCours(old),
+      ),
+    );
+    if (res == null || !mounted) return;
+    final list = [..._cours];
+    if (old != null) list.remove(old);
+    list.add(res);
+    await _saveCours(list);
+  }
+
+  Future<void> _deleteCours(Cours c) async {
+    await _saveCours([..._cours]..remove(c));
+    if (!mounted) return;
+    final m = ScaffoldMessenger.of(context);
+    m.clearSnackBars();
+    m.showSnackBar(
+      SnackBar(
+        content: Text('Cours de ${c.matiere} supprimé'),
+        action: SnackBarAction(
+          label: 'Annuler',
+          onPressed: () => _saveCours([..._cours, c]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final cours =
+        [
+          for (final c in _cours)
+            if (c.semestre == _semestre) c,
+        ]..sort((a, b) {
+          final jour = a.jour.compareTo(b.jour);
+          if (jour != 0) return jour;
+          return _minutes(a.heureDebut).compareTo(_minutes(b.heureDebut));
+        });
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Modifier l'emploi du temps")),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _editCours(),
+        icon: const Icon(Icons.add),
+        label: const Text('Ajouter un cours'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 1, label: Text('1er semestre')),
+                ButtonSegment(value: 2, label: Text('2e semestre')),
+              ],
+              selected: {_semestre},
+              onSelectionChanged: (s) => _setSemestre(s.first),
+            ),
+          ),
+          Expanded(
+            child: cours.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_month_rounded,
+                            size: 64,
+                            color: cs.primary,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Aucun cours ce semestre',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Ajoute un cours avec le bouton « Ajouter un cours ».',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                    children: _sections(cours),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _sections(List<Cours> cours) {
+    final byDay = <int, List<Cours>>{};
+    for (final c in cours) {
+      if (c.jour >= 1 && c.jour <= 7) {
+        byDay.putIfAbsent(c.jour, () => []).add(c);
+      }
+    }
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return [
+      for (var jour = 1; jour <= 7; jour++)
+        if (byDay[jour] != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+            child: Text(
+              _jours[jour - 1],
+              style: tt.titleSmall?.copyWith(color: cs.primary),
+            ),
+          ),
+          Card.filled(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < byDay[jour]!.length; i++) ...[
+                  if (i > 0)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                  _CoursTile(
+                    cours: byDay[jour]![i],
+                    onEdit: (_) => _editCours(byDay[jour]![i]),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+    ];
   }
 }
 
