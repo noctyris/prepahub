@@ -67,6 +67,8 @@ DateTime _mondayOf(DateTime d) =>
 bool _sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
+enum _EdtView { day, week }
+
 class EDTPage extends StatefulWidget {
   const EDTPage({super.key});
 
@@ -77,18 +79,30 @@ class EDTPage extends StatefulWidget {
 class _EDTPageState extends State<EDTPage> {
   List<Cours>? _cours;
   List<Colle>? _colles;
-  DateTime _monday = _mondayOf(DateTime.now());
+  late DateTime _selectedDay;
   int _semestre = _defaultSemestre(DateTime.now());
+  _EdtView _view = _EdtView.day;
+  double _slideDirection = 0;
+  double _dragDx = 0;
 
   static int _defaultSemestre(DateTime d) =>
       d.month >= 8 || d.month == 1 ? 1 : 2;
 
+  DateTime get _monday => _mondayOf(_selectedDay);
+
   String get _semestreLabel => _semestre == 1 ? '1er semestre' : '2e semestre';
+
+  bool get _isToday => _sameDay(_selectedDay, DateTime.now());
 
   bool get _isCurrentWeek => _monday == _mondayOf(DateTime.now());
 
+  bool get _showTodayAction =>
+      _view == _EdtView.day ? !_isToday : !_isCurrentWeek;
+
   @override
   void initState() {
+    final now = DateTime.now();
+    _selectedDay = DateTime(now.year, now.month, now.day);
     super.initState();
     _load();
   }
@@ -163,14 +177,39 @@ class _EDTPageState extends State<EDTPage> {
     await _load();
   }
 
-  void _shiftWeek(int weeks) {
+  void _setView(_EdtView view) {
+    if (view == _view) return;
     setState(() {
-      _monday = DateTime(_monday.year, _monday.month, _monday.day + 7 * weeks);
+      _view = view;
+      _slideDirection = 0;
     });
   }
 
-  void _goToCurrentWeek() {
-    setState(() => _monday = _mondayOf(DateTime.now()));
+  void _move(int delta) {
+    final days = _view == _EdtView.week ? 7 * delta : delta;
+    setState(() {
+      _slideDirection = delta > 0 ? 1 : -1;
+      _selectedDay = DateTime(
+        _selectedDay.year,
+        _selectedDay.month,
+        _selectedDay.day + days,
+      );
+    });
+  }
+
+  void _goToToday() {
+    final now = DateTime.now();
+    setState(() {
+      _slideDirection = 0;
+      _selectedDay = DateTime(now.year, now.month, now.day);
+    });
+  }
+
+  void _onSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (_dragDx.abs() < 40 && velocity.abs() < 120) return;
+    final next = _dragDx < 0 || velocity < 0;
+    _move(next ? 1 : -1);
   }
 
   Future<void> _openColles() async {
@@ -199,157 +238,221 @@ class _EDTPageState extends State<EDTPage> {
 
   @override
   Widget build(BuildContext context) {
-    final loading = _cours == null || _colles == null;
-    final cours = _weekCours();
-    final colles = _weekColles();
-    final hasEntries = cours.isNotEmpty || colles.isNotEmpty;
-    final semesterHasCours = (_cours ?? const <Cours>[]).any(
-      (c) => c.semestre == _semestre,
-    );
-
+    final isWeek = _view == _EdtView.week;
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar.large(
-            title: const Text('Emploi du temps'),
-            actions: [
-              if (!_isCurrentWeek)
-                IconButton(
-                  tooltip: 'Revenir à cette semaine',
-                  icon: const Icon(Icons.today),
-                  onPressed: _goToCurrentWeek,
-                ),
-              IconButton(
-                tooltip: "Modifier l'emploi du temps",
-                icon: const Icon(Icons.edit_calendar_outlined),
-                onPressed: _cours == null ? null : _openEditor,
+      appBar: AppBar(
+        title: const Text('Emploi du temps'),
+        actions: [
+          if (_showTodayAction)
+            IconButton(
+              tooltip: isWeek
+                  ? 'Revenir à cette semaine'
+                  : "Revenir à aujourd'hui",
+              icon: const Icon(Icons.today),
+              onPressed: _goToToday,
+            ),
+          IconButton(
+            tooltip: "Modifier l'emploi du temps",
+            icon: const Icon(Icons.edit_calendar_outlined),
+            onPressed: _cours == null ? null : _openEditor,
+          ),
+          IconButton(
+            tooltip: 'Planning des khôlles',
+            icon: const Icon(Icons.record_voice_over_outlined),
+            onPressed: _openColles,
+          ),
+          PopupMenuButton<int>(
+            tooltip: 'Semestre',
+            onSelected: _chooseSemestre,
+            itemBuilder: (_) => [
+              CheckedPopupMenuItem(
+                value: 1,
+                checked: _semestre == 1,
+                child: const Text('1er semestre'),
               ),
-              IconButton(
-                tooltip: 'Planning des khôlles',
-                icon: const Icon(Icons.record_voice_over_outlined),
-                onPressed: _openColles,
-              ),
-              PopupMenuButton<int>(
-                tooltip: 'Semestre',
-                onSelected: _chooseSemestre,
-                itemBuilder: (_) => [
-                  CheckedPopupMenuItem(
-                    value: 1,
-                    checked: _semestre == 1,
-                    child: const Text('1er semestre'),
-                  ),
-                  CheckedPopupMenuItem(
-                    value: 2,
-                    checked: _semestre == 2,
-                    child: const Text('2e semestre'),
-                  ),
-                ],
+              CheckedPopupMenuItem(
+                value: 2,
+                checked: _semestre == 2,
+                child: const Text('2e semestre'),
               ),
             ],
           ),
-          SliverToBoxAdapter(child: _weekHeader()),
-          if (loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (!hasEntries)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyWeek(hasCours: semesterHasCours),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-              sliver: SliverList.list(children: _agenda(cours, colles)),
+        ],
+      ),
+      body: Column(
+        children: [
+          _header(),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (_) => _dragDx = 0,
+              onHorizontalDragUpdate: (d) => _dragDx += d.delta.dx,
+              onHorizontalDragEnd: _onSwipe,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, animation) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(_slideDirection * 0.15, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: SizedBox.expand(
+                  key: ValueKey(
+                    '${_view.name}-${_selectedDay.toIso8601String()}',
+                  ),
+                  child: isWeek ? _weekView() : _dayView(),
+                ),
+              ),
             ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _weekHeader() {
+  Widget _header() {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final sunday = DateTime(_monday.year, _monday.month, _monday.day + 6);
+    final isWeek = _view == _EdtView.week;
+    final monday = _monday;
+    final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+    final title = isWeek
+        ? 'Semaine ${monday.isoWeekNumber}'
+        : '${_jours[_selectedDay.weekday - 1]} ${_selectedDay.day} '
+              '${_mois[_selectedDay.month - 1]}';
+    final subtitle = isWeek
+        ? '${monday.day} ${_mois[monday.month - 1]} – '
+              '${sunday.day} ${_mois[sunday.month - 1]}'
+        : 'Semaine ${_selectedDay.isoWeekNumber}';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Card.filled(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        children: [
+          SegmentedButton<_EdtView>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            segments: const [
+              ButtonSegment(value: _EdtView.day, label: Text('Jour')),
+              ButtonSegment(value: _EdtView.week, label: Text('Semaine')),
+            ],
+            selected: {_view},
+            onSelectionChanged: (s) => _setView(s.first),
+          ),
+          const SizedBox(height: 2),
+          Row(
             children: [
               IconButton(
-                tooltip: 'Semaine précédente',
+                tooltip: isWeek ? 'Semaine précédente' : 'Jour précédent',
                 icon: const Icon(Icons.chevron_left),
-                onPressed: () => _shiftWeek(-1),
+                onPressed: () => _move(-1),
               ),
               Expanded(
                 child: Column(
                   children: [
-                    Text(
-                      'Semaine ${_monday.isoWeekNumber}',
-                      style: tt.titleLarge,
-                    ),
+                    Text(title, style: tt.titleLarge),
                     const SizedBox(height: 2),
                     Text(
-                      '${_monday.day} ${_mois[_monday.month - 1]} – '
-                      '${sunday.day} ${_mois[sunday.month - 1]}',
-                      style: tt.bodyMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '$_semestreLabel${_isCurrentWeek ? ' · cette semaine' : ''}',
-                      style: tt.labelMedium?.copyWith(color: cs.primary),
+                      '$subtitle · $_semestreLabel',
+                      textAlign: TextAlign.center,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
               IconButton(
-                tooltip: 'Semaine suivante',
+                tooltip: isWeek ? 'Semaine suivante' : 'Jour suivant',
                 icon: const Icon(Icons.chevron_right),
-                onPressed: () => _shiftWeek(1),
+                onPressed: () => _move(1),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  List<Widget> _agenda(List<Cours> cours, List<Colle> colles) {
-    final now = DateTime.now();
+  Widget _weekView() {
+    if (_cours == null || _colles == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final cours = _weekCours();
+    final colles = _weekColles();
     final sections = <Widget>[];
-
     for (var jour = 1; jour <= 7; jour++) {
       final date = DateTime(
         _monday.year,
         _monday.month,
         _monday.day + jour - 1,
       );
-      final entries = <_Slot>[
-        for (final c in cours)
-          if (c.jour == jour) _Slot.cours(c),
-        for (final c in colles)
-          if (c.date.weekday == jour) _Slot.colle(c),
-      ]..sort((a, b) => a.minutes.compareTo(b.minutes));
-      if (entries.isEmpty) continue;
-
-      sections.add(
-        _DaySection(
-          date: date,
-          isToday: _sameDay(date, now),
-          entries: entries,
-          onEdit: (_) => _openEditor(),
-          onColles: _openColles,
-        ),
-      );
+      final section = _sectionFor(date, cours, colles);
+      if (section != null) sections.add(section);
     }
-    return sections;
+    if (sections.isEmpty) return _emptyAgenda(week: true);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: sections,
+    );
+  }
+
+  Widget _dayView() {
+    if (_cours == null || _colles == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final section = _sectionFor(
+      _selectedDay,
+      _weekCours(),
+      _weekColles(),
+      showHeader: false,
+    );
+    if (section == null) return _emptyAgenda(week: false);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [section],
+    );
+  }
+
+  Widget _emptyAgenda({required bool week}) {
+    final hasCours = (_cours ?? const <Cours>[]).any(
+      (c) => c.semestre == _semestre,
+    );
+    return _EmptyAgenda(
+      icon: hasCours ? Icons.event_busy_rounded : Icons.calendar_month_rounded,
+      title: hasCours
+          ? (week ? 'Rien cette semaine' : 'Rien ce jour')
+          : 'Aucun cours ce semestre',
+      message: hasCours
+          ? (week
+                ? 'Aucun cours ni khôlle pour cette semaine.'
+                : 'Aucun cours ni khôlle pour ce jour.')
+          : 'Ajoute tes cours depuis la page de modification '
+                '(icône en haut).',
+      onEdit: () => _openEditor(),
+    );
+  }
+
+  Widget? _sectionFor(
+    DateTime date,
+    List<Cours> cours,
+    List<Colle> colles, {
+    bool showHeader = true,
+  }) {
+    final entries = <_Slot>[
+      for (final c in cours)
+        if (c.jour == date.weekday) _Slot.cours(c),
+      for (final c in colles)
+        if (c.date.weekday == date.weekday) _Slot.colle(c),
+    ]..sort((a, b) => a.minutes.compareTo(b.minutes));
+    if (entries.isEmpty) return null;
+    return _DaySection(
+      date: date,
+      isToday: _sameDay(date, DateTime.now()),
+      entries: entries,
+      onEdit: (_) => _openEditor(),
+      onColles: _openColles,
+      showHeader: showHeader,
+    );
   }
 }
 
@@ -371,6 +474,7 @@ class _DaySection extends StatelessWidget {
   final List<_Slot> entries;
   final ValueChanged<Cours> onEdit;
   final VoidCallback onColles;
+  final bool showHeader;
 
   const _DaySection({
     required this.date,
@@ -378,6 +482,7 @@ class _DaySection extends StatelessWidget {
     required this.entries,
     required this.onEdit,
     required this.onColles,
+    this.showHeader = true,
   });
 
   @override
@@ -390,27 +495,30 @@ class _DaySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${_jours[date.weekday - 1]} ${date.day} '
-                    '${_mois[date.month - 1]}',
-                    style: tt.titleSmall?.copyWith(
-                      color: isToday ? cs.primary : null,
+          if (showHeader)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_jours[date.weekday - 1]} ${date.day} '
+                      '${_mois[date.month - 1]}',
+                      style: tt.titleSmall?.copyWith(
+                        color: isToday ? cs.primary : null,
+                      ),
                     ),
                   ),
-                ),
-                if (isToday)
-                  Text(
-                    'Aujourd’hui',
-                    style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-              ],
+                  if (isToday)
+                    Text(
+                      'Aujourd’hui',
+                      style: tt.labelMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
           Card.filled(
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
@@ -556,10 +664,18 @@ class _TimeBadge extends StatelessWidget {
   }
 }
 
-class _EmptyWeek extends StatelessWidget {
-  final bool hasCours;
+class _EmptyAgenda extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback? onEdit;
 
-  const _EmptyWeek({required this.hasCours});
+  const _EmptyAgenda({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -571,28 +687,23 @@ class _EmptyWeek extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              hasCours
-                  ? Icons.event_busy_rounded
-                  : Icons.calendar_month_rounded,
-              size: 64,
-              color: cs.primary,
-            ),
+            Icon(icon, size: 64, color: cs.primary),
             const SizedBox(height: 16),
-            Text(
-              hasCours ? 'Rien cette semaine' : 'Aucun cours ce semestre',
-              textAlign: TextAlign.center,
-              style: tt.headlineSmall,
-            ),
+            Text(title, textAlign: TextAlign.center, style: tt.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              hasCours
-                  ? 'Aucun cours ni khôlle pour cette semaine.'
-                  : 'Ajoute tes cours depuis la page de modification '
-                        '(icône en haut), et tes khôlles via le bouton en haut.',
+              message,
               textAlign: TextAlign.center,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
+            if (onEdit != null) ...[
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_calendar_outlined),
+                label: const Text("Modifier l'emploi du temps"),
+              ),
+            ],
           ],
         ),
       ),
