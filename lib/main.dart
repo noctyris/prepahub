@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -56,7 +57,9 @@ class _RootPageState extends State<RootPage> {
   @override
   void initState() {
     super.initState();
-    _updateTimer = Timer(const Duration(seconds: 4), _checkUpdate);
+    if (kReleaseMode) {
+      _updateTimer = Timer(const Duration(seconds: 4), _checkUpdate);
+    }
   }
 
   @override
