@@ -81,6 +81,45 @@ bool _sameDay(DateTime a, DateTime b) =>
 
 enum _EdtView { day, week }
 
+enum _CoursRecurrence { everyWeek, oddWeeks, evenWeeks, custom }
+
+final int _oddWeeksMask = _weeksMask(odd: true);
+final int _evenWeeksMask = _weeksMask(odd: false);
+
+// `restrictions` stocke les semaines ISO sous forme de masque de bits
+// (bit 0 = semaine 1).
+int _weeksMask({required bool odd}) {
+  var mask = 0;
+  for (var week = 1; week <= 53; week++) {
+    if (week.isOdd == odd) mask |= 1 << (week - 1);
+  }
+  return mask;
+}
+
+_CoursRecurrence _recurrenceOf(Cours c) {
+  if (c.restrictions == 0) return _CoursRecurrence.everyWeek;
+  if (c.restrictions == _oddWeeksMask) return _CoursRecurrence.oddWeeks;
+  if (c.restrictions == _evenWeeksMask) return _CoursRecurrence.evenWeeks;
+  return _CoursRecurrence.custom;
+}
+
+bool _isBiweekly(Cours c) =>
+    _recurrenceOf(c) == _CoursRecurrence.oddWeeks ||
+    _recurrenceOf(c) == _CoursRecurrence.evenWeeks;
+
+String? _recurrenceLabel(Cours c) => switch (_recurrenceOf(c)) {
+  _CoursRecurrence.everyWeek => null,
+  _CoursRecurrence.oddWeeks => 'Une semaine sur deux (impaires)',
+  _CoursRecurrence.evenWeeks => 'Une semaine sur deux (paires)',
+  _CoursRecurrence.custom => 'Semaines spécifiques',
+};
+
+String? _recurrenceBadge(Cours c) => switch (_recurrenceOf(c)) {
+  _CoursRecurrence.everyWeek => null,
+  _CoursRecurrence.oddWeeks || _CoursRecurrence.evenWeeks => '1 sem. / 2',
+  _CoursRecurrence.custom => 'Certaines sem.',
+};
+
 class EDTPage extends StatefulWidget {
   const EDTPage({super.key});
 
@@ -521,6 +560,9 @@ class _EdtEvent {
   }
 
   bool get isKholle => colle != null;
+  bool get isBiweekly => cours != null && _isBiweekly(cours!);
+  String? get recurrenceLabel =>
+      cours == null ? null : _recurrenceLabel(cours!);
 
   String get matiere => cours?.matiere ?? colle!.matiere;
   String get prof => cours?.prof ?? colle!.prof;
@@ -544,6 +586,15 @@ class _EventCard extends StatelessWidget {
       if (event.salle.isNotEmpty) 'Salle ${event.salle}',
       if (event.prof.isNotEmpty) event.prof,
     ].join(' · ');
+    final badge = isKholle
+        ? 'Khôlle'
+        : (event.cours == null ? null : _recurrenceBadge(event.cours!));
+    final badgeBackground = isKholle
+        ? cs.tertiaryContainer
+        : cs.primaryContainer;
+    final badgeForeground = isKholle
+        ? cs.onTertiaryContainer
+        : cs.onPrimaryContainer;
 
     return Card.filled(
       margin: EdgeInsets.zero,
@@ -567,17 +618,17 @@ class _EventCard extends StatelessWidget {
                 style: tt.titleMedium,
               ),
             ),
-            if (isKholle) ...[
+            if (badge != null) ...[
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
+                  color: badgeBackground,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Khôlle',
-                  style: tt.labelSmall?.copyWith(color: cs.onTertiaryContainer),
+                  badge,
+                  style: tt.labelSmall?.copyWith(color: badgeForeground),
                 ),
               ),
             ],
@@ -927,7 +978,9 @@ class _WeekEventBlock extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isKholle ? 'Khôlle' : _gridTime(event.start),
+                    isKholle
+                        ? 'Khôlle'
+                        : '${_gridTime(event.start)}${event.isBiweekly ? ' · 1/2' : ''}',
                     maxLines: 1,
                     overflow: TextOverflow.clip,
                     style: tt.labelSmall?.copyWith(
@@ -985,6 +1038,7 @@ class _EventSheet extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final isKholle = event.isKholle;
     final date = event.date;
+    final recurrence = event.recurrenceLabel;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -1036,6 +1090,8 @@ class _EventSheet extends StatelessWidget {
               icon: Icons.meeting_room_outlined,
               text: 'Salle ${event.salle}',
             ),
+          if (recurrence != null)
+            _DetailRow(icon: Icons.repeat, text: recurrence),
           if (event.cours != null)
             _DetailRow(
               icon: Icons.school_outlined,
@@ -1098,6 +1154,11 @@ class _CoursTile extends StatelessWidget {
       if (cours.salle.isNotEmpty) 'Salle ${cours.salle}',
       if (cours.prof.isNotEmpty) cours.prof,
     ].join(' · ');
+    final recurrence = _recurrenceLabel(cours);
+    final subtitle = [?recurrence, if (details.isNotEmpty) details].join(' · ');
+    final jour = cours.jour >= 1 && cours.jour <= 7
+        ? _jours[cours.jour - 1]
+        : 'Jour inconnu';
 
     return ListTile(
       onTap: () => onEdit(cours),
@@ -1107,8 +1168,8 @@ class _CoursTile extends StatelessWidget {
         background: cs.secondaryContainer,
         foreground: cs.onSecondaryContainer,
       ),
-      title: Text(cours.matiere, style: tt.titleMedium),
-      subtitle: details.isEmpty ? null : Text(details),
+      title: Text(jour, style: tt.titleMedium),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
     );
   }
 }
@@ -1358,41 +1419,55 @@ class _EdtEditPageState extends State<_EdtEditPage> {
   }
 
   List<Widget> _sections(List<Cours> cours) {
-    final byDay = <int, List<Cours>>{};
+    final byMatiere = <String, List<Cours>>{};
     for (final c in cours) {
-      if (c.jour >= 1 && c.jour <= 7) {
-        byDay.putIfAbsent(c.jour, () => []).add(c);
-      }
+      final matiere = c.matiere.trim();
+      final key = matiere.isEmpty ? 'sans matière' : matiere.toLowerCase();
+      byMatiere.putIfAbsent(key, () => []).add(c);
     }
+    final matieres = byMatiere.keys.toList()..sort();
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return [
-      for (var jour = 1; jour <= 7; jour++)
-        if (byDay[jour] != null) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-            child: Text(
-              _jours[jour - 1],
-              style: tt.titleSmall?.copyWith(color: cs.primary),
-            ),
+      for (final key in matieres) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  byMatiere[key]!.first.matiere.trim().isEmpty
+                      ? 'Sans matière'
+                      : byMatiere[key]!.first.matiere.trim(),
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.titleSmall?.copyWith(color: cs.primary),
+                ),
+              ),
+              Text(
+                byMatiere[key]!.length == 1
+                    ? '1 créneau'
+                    : '${byMatiere[key]!.length} créneaux',
+                style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
           ),
-          Card.filled(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                for (var i = 0; i < byDay[jour]!.length; i++) ...[
-                  if (i > 0)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                  _CoursTile(
-                    cours: byDay[jour]![i],
-                    onEdit: (_) => _editCours(byDay[jour]![i]),
-                  ),
-                ],
+        ),
+        Card.filled(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < byMatiere[key]!.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+                _CoursTile(
+                  cours: byMatiere[key]![i],
+                  onEdit: (_) => _editCours(byMatiere[key]![i]),
+                ),
               ],
-            ),
+            ],
           ),
-        ],
+        ),
+      ],
     ];
   }
 }
@@ -1413,6 +1488,7 @@ class _CoursFormState extends State<_CoursForm> {
   late final TextEditingController _prof;
   late final TextEditingController _salle;
   late int _jour;
+  late _CoursRecurrence _recurrence;
   late TimeOfDay _debut;
   late TimeOfDay _fin;
   String? _error;
@@ -1426,6 +1502,7 @@ class _CoursFormState extends State<_CoursForm> {
     _salle = TextEditingController(text: i?.salle ?? '');
     final jour = i?.jour ?? DateTime.now().weekday;
     _jour = jour >= 1 && jour <= 7 ? jour : 1;
+    _recurrence = i == null ? _CoursRecurrence.everyWeek : _recurrenceOf(i);
     _debut = i == null
         ? const TimeOfDay(hour: 8, minute: 0)
         : _parseTime(i.heureDebut);
@@ -1481,7 +1558,12 @@ class _CoursFormState extends State<_CoursForm> {
         jour: _jour,
         heureDebut: '${_two(_debut.hour)}:${_two(_debut.minute)}',
         heureFin: '${_two(_fin.hour)}:${_two(_fin.minute)}',
-        restrictions: widget.initial?.restrictions ?? 0,
+        restrictions: switch (_recurrence) {
+          _CoursRecurrence.everyWeek => 0,
+          _CoursRecurrence.oddWeeks => _oddWeeksMask,
+          _CoursRecurrence.evenWeeks => _evenWeeksMask,
+          _CoursRecurrence.custom => widget.initial?.restrictions ?? 0,
+        },
         prof: _prof.text.trim(),
         salle: _salle.text.trim(),
         semestre: widget.initial?.semestre ?? widget.semestre,
@@ -1539,6 +1621,40 @@ class _CoursFormState extends State<_CoursForm> {
             ],
             onChanged: (v) {
               if (v != null) setState(() => _jour = v);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<_CoursRecurrence>(
+            initialValue: _recurrence,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Fréquence',
+              prefixIcon: Icon(Icons.repeat),
+              border: OutlineInputBorder(),
+              helperText:
+                  "La parité suit le numéro de semaine de l'emploi du temps.",
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: _CoursRecurrence.everyWeek,
+                child: Text('Toutes les semaines'),
+              ),
+              const DropdownMenuItem(
+                value: _CoursRecurrence.oddWeeks,
+                child: Text('Une semaine sur deux (impaires)'),
+              ),
+              const DropdownMenuItem(
+                value: _CoursRecurrence.evenWeeks,
+                child: Text('Une semaine sur deux (paires)'),
+              ),
+              if (_recurrence == _CoursRecurrence.custom)
+                const DropdownMenuItem(
+                  value: _CoursRecurrence.custom,
+                  child: Text('Semaines spécifiques'),
+                ),
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => _recurrence = v);
             },
           ),
           const SizedBox(height: 12),
