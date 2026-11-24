@@ -14,16 +14,18 @@ val keyProps = Properties().apply {
 android {
     namespace = "fr.circumpolar.prepahub"
 //    compileSdk = flutter.compileSdkVersion
-    compileSdk = 36
-      ndkVersion = flutter.ndkVersion
+    compileSdk = 37
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
         applicationId = "fr.circumpolar.prepahub"
+        multiDexEnabled = true
         val versionTag = (System.getenv("GIT_TAG") ?: "0.2.0").removePrefix("v").substringBefore("-")
         versionName = versionTag
         versionCode = System.getenv("BUILD_NUMBER")?.toIntOrNull()
@@ -65,6 +67,10 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

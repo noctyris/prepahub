@@ -36,7 +36,9 @@ const _mois = [
   'déc.',
 ];
 
-const _prefSemestre = 'edt_semestre';
+const edtSemesterPrefKey = 'edt_semestre';
+
+int defaultEdtSemester(DateTime d) => d.month >= 8 || d.month == 1 ? 1 : 2;
 
 String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -121,7 +123,9 @@ String? _recurrenceBadge(Cours c) => switch (_recurrenceOf(c)) {
 };
 
 class EDTPage extends StatefulWidget {
-  const EDTPage({super.key});
+  final VoidCallback? onTimetableChanged;
+
+  const EDTPage({super.key, this.onTimetableChanged});
 
   @override
   State<EDTPage> createState() => _EDTPageState();
@@ -162,7 +166,7 @@ class _EDTPageState extends State<EDTPage> {
     var semestre = _defaultSemestre(DateTime.now());
     try {
       final prefs = await SharedPreferences.getInstance();
-      semestre = prefs.getInt(_prefSemestre) ?? semestre;
+      semestre = prefs.getInt(edtSemesterPrefKey) ?? semestre;
     } catch (_) {}
     List<Cours> cours;
     List<Colle> colles;
@@ -211,8 +215,10 @@ class _EDTPageState extends State<EDTPage> {
     setState(() => _semestre = semestre);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_prefSemestre, semestre);
+      await prefs.setInt(edtSemesterPrefKey, semestre);
     } catch (_) {}
+    if (!mounted) return;
+    widget.onTimetableChanged?.call();
   }
 
   Future<void> _openEditor() async {
@@ -226,6 +232,8 @@ class _EDTPageState extends State<EDTPage> {
     );
     if (!mounted) return;
     await _load();
+    if (!mounted) return;
+    widget.onTimetableChanged?.call();
   }
 
   void _setView(_EdtView view) {
@@ -1293,7 +1301,7 @@ class _EdtEditPageState extends State<_EdtEditPage> {
     setState(() => _semestre = semestre);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_prefSemestre, semestre);
+      await prefs.setInt(edtSemesterPrefKey, semestre);
     } catch (_) {}
   }
 

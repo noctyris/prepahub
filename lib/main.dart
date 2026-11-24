@@ -1,17 +1,21 @@
 import 'dart:async';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter/foundation.dart' show ValueNotifier, kReleaseMode;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'devoirs.dart';
+import 'devoirs_notifications.dart';
+import 'devoirs_page.dart';
 import 'notes.dart';
 import 'edt.dart';
 import 'update.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  await DevoirNotifications.instance.initialize();
   runApp(const PrepaHubApp());
 }
 
@@ -53,10 +57,27 @@ class RootPage extends StatefulWidget {
 class _RootPageState extends State<RootPage> {
   int currentPageIndex = 0;
   Timer? _updateTimer;
+  final ValueNotifier<DevoirDraft?> _devoirDraftRequest =
+      ValueNotifier<DevoirDraft?>(null);
 
   @override
   void initState() {
     super.initState();
+
+    final initialTap = devoirNotificationTap.value;
+    if (initialTap != null) {
+      devoirNotificationTap.value = null;
+      currentPageIndex = 2;
+      if (initialTap.matiere != null) {
+        _devoirDraftRequest.value = DevoirDraft(matiere: initialTap.matiere);
+      }
+    }
+    devoirNotificationTap.addListener(_handleDevoirNotification);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(DevoirNotifications.instance.sync());
+    });
+
     if (kReleaseMode) {
       _updateTimer = Timer(const Duration(seconds: 4), _checkUpdate);
     }
@@ -64,8 +85,25 @@ class _RootPageState extends State<RootPage> {
 
   @override
   void dispose() {
+    devoirNotificationTap.removeListener(_handleDevoirNotification);
+    _devoirDraftRequest.dispose();
     _updateTimer?.cancel();
     super.dispose();
+  }
+
+  void _handleDevoirNotification() {
+    final tap = devoirNotificationTap.value;
+    if (tap == null) return;
+    devoirNotificationTap.value = null;
+    if (!mounted) return;
+    setState(() => currentPageIndex = 2);
+    if (tap.matiere != null) {
+      _devoirDraftRequest.value = DevoirDraft(matiere: tap.matiere);
+    }
+  }
+
+  void _syncDevoirNotifications() {
+    unawaited(DevoirNotifications.instance.sync());
   }
 
   Future<void> _checkUpdate() async {
@@ -95,6 +133,7 @@ class _RootPageState extends State<RootPage> {
             icon: Icon(Icons.calendar_month_outlined),
             label: 'Emploi du temps',
           ),
+          NavigationDestination(icon: Icon(Icons.checklist), label: 'Devoirs'),
         ],
       ),
       body: <Widget>[
@@ -102,7 +141,10 @@ class _RootPageState extends State<RootPage> {
         NotesPage(),
 
         /// Timetable and khôlles
-        EDTPage(),
+        EDTPage(onTimetableChanged: _syncDevoirNotifications),
+
+        /// Homework
+        DevoirsPage(draftRequest: _devoirDraftRequest),
       ][currentPageIndex],
     );
   }

@@ -20,7 +20,7 @@ subprojects {
 subprojects {
     afterEvaluate {
         extensions.findByType(com.android.build.api.dsl.CommonExtension::class.java)?.let { android ->
-            android.compileSdk = 36
+            android.compileSdk = 37
         }
     }
 }
