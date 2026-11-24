@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -37,6 +38,7 @@ const _mois = [
 ];
 
 const edtSemesterPrefKey = 'edt_semestre';
+const edtWeekendPrefKey = 'edt_weekend_visible';
 
 int defaultEdtSemester(DateTime d) => d.month >= 8 || d.month == 1 ? 1 : 2;
 
@@ -80,6 +82,14 @@ DateTime _mondayOf(DateTime d) =>
 
 bool _sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
+
+DateTime _nextSchoolDay(DateTime date) {
+  var result = DateTime(date.year, date.month, date.day);
+  while (result.weekday > DateTime.friday) {
+    result = result.add(const Duration(days: 1));
+  }
+  return result;
+}
 
 enum _EdtView { day, week }
 
@@ -136,6 +146,7 @@ class _EDTPageState extends State<EDTPage> {
   List<Colle>? _colles;
   late DateTime _selectedDay;
   int _semestre = _defaultSemestre(DateTime.now());
+  bool _showWeekend = false;
   _EdtView _view = _EdtView.day;
   double _slideDirection = 0;
   double _dragDx = 0;
@@ -147,9 +158,17 @@ class _EDTPageState extends State<EDTPage> {
 
   String get _semestreLabel => _semestre == 1 ? '1er semestre' : '2e semestre';
 
-  bool get _isToday => _sameDay(_selectedDay, DateTime.now());
+  DateTime get _visibleToday {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _showWeekend ? today : _nextSchoolDay(today);
+  }
+
+  bool get _isToday => _sameDay(_selectedDay, _visibleToday);
 
   bool get _isCurrentWeek => _monday == _mondayOf(DateTime.now());
+
+  int get _visibleDayCount => _showWeekend ? 7 : 5;
 
   bool get _showTodayAction =>
       _view == _EdtView.day ? !_isToday : !_isCurrentWeek;
@@ -164,9 +183,11 @@ class _EDTPageState extends State<EDTPage> {
 
   Future<void> _load() async {
     var semestre = _defaultSemestre(DateTime.now());
+    var showWeekend = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       semestre = prefs.getInt(edtSemesterPrefKey) ?? semestre;
+      showWeekend = prefs.getBool(edtWeekendPrefKey) ?? false;
     } catch (_) {}
     List<Cours> cours;
     List<Colle> colles;
@@ -183,6 +204,8 @@ class _EDTPageState extends State<EDTPage> {
     if (!mounted) return;
     setState(() {
       _semestre = semestre;
+      _showWeekend = showWeekend;
+      if (!showWeekend) _selectedDay = _nextSchoolDay(_selectedDay);
       _cours = cours;
       _colles = colles;
     });
@@ -245,23 +268,47 @@ class _EDTPageState extends State<EDTPage> {
   }
 
   void _move(int delta) {
-    final days = _view == _EdtView.week ? 7 * delta : delta;
     setState(() {
       _slideDirection = delta > 0 ? 1 : -1;
-      _selectedDay = DateTime(
+      if (_view == _EdtView.week) {
+        _selectedDay = DateTime(
+          _selectedDay.year,
+          _selectedDay.month,
+          _selectedDay.day + 7 * delta,
+        );
+        return;
+      }
+      var next = DateTime(
         _selectedDay.year,
         _selectedDay.month,
-        _selectedDay.day + days,
+        _selectedDay.day + delta,
       );
+      if (!_showWeekend) {
+        while (next.weekday > DateTime.friday) {
+          next = next.add(Duration(days: delta.sign));
+        }
+      }
+      _selectedDay = next;
     });
   }
 
   void _goToToday() {
-    final now = DateTime.now();
     setState(() {
       _slideDirection = 0;
-      _selectedDay = DateTime(now.year, now.month, now.day);
+      _selectedDay = _visibleToday;
     });
+  }
+
+  Future<void> _toggleWeekend() async {
+    final show = !_showWeekend;
+    setState(() {
+      _showWeekend = show;
+      if (!show) _selectedDay = _nextSchoolDay(_selectedDay);
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(edtWeekendPrefKey, show);
+    } catch (_) {}
   }
 
   void _onSwipe(DragEndDetails details) {
@@ -321,8 +368,14 @@ class _EDTPageState extends State<EDTPage> {
             onPressed: _openColles,
           ),
           PopupMenuButton<int>(
-            tooltip: 'Semestre',
-            onSelected: _chooseSemestre,
+            tooltip: 'Semestre et affichage',
+            onSelected: (value) {
+              if (value == 0) {
+                unawaited(_toggleWeekend());
+              } else {
+                unawaited(_chooseSemestre(value));
+              }
+            },
             itemBuilder: (_) => [
               CheckedPopupMenuItem(
                 value: 1,
@@ -333,6 +386,12 @@ class _EDTPageState extends State<EDTPage> {
                 value: 2,
                 checked: _semestre == 2,
                 child: const Text('2e semestre'),
+              ),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem(
+                value: 0,
+                checked: _showWeekend,
+                child: const Text('Afficher le week-end'),
               ),
             ],
           ),
@@ -375,14 +434,18 @@ class _EDTPageState extends State<EDTPage> {
     final tt = Theme.of(context).textTheme;
     final isWeek = _view == _EdtView.week;
     final monday = _monday;
-    final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+    final lastDay = DateTime(
+      monday.year,
+      monday.month,
+      monday.day + (_showWeekend ? 6 : 4),
+    );
     final title = isWeek
         ? 'Semaine ${monday.isoWeekNumber}'
         : '${_jours[_selectedDay.weekday - 1]} ${_selectedDay.day} '
               '${_mois[_selectedDay.month - 1]}';
     final subtitle = isWeek
         ? '${monday.day} ${_mois[monday.month - 1]} – '
-              '${sunday.day} ${_mois[sunday.month - 1]}'
+              '${lastDay.day} ${_mois[lastDay.month - 1]}'
         : 'Semaine ${_selectedDay.isoWeekNumber}';
 
     return Padding(
@@ -437,12 +500,14 @@ class _EDTPageState extends State<EDTPage> {
     final colles = _weekColles();
     return [
       for (final c in cours)
-        if (c.jour >= 1 && c.jour <= 7)
+        if (c.jour >= 1 && c.jour <= _visibleDayCount)
           _EdtEvent.cours(
             c,
             DateTime(_monday.year, _monday.month, _monday.day + c.jour - 1),
           ),
-      for (final c in colles) _EdtEvent.colle(c),
+      for (final c in colles)
+        if (_showWeekend || c.date.weekday <= DateTime.friday)
+          _EdtEvent.colle(c),
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
@@ -452,7 +517,12 @@ class _EDTPageState extends State<EDTPage> {
     }
     final events = _weekEvents();
     if (events.isEmpty) return _emptyAgenda(week: true);
-    return _WeekGrid(monday: _monday, events: events, onTap: _showEvent);
+    return _WeekGrid(
+      monday: _monday,
+      dayCount: _visibleDayCount,
+      events: events,
+      onTap: _showEvent,
+    );
   }
 
   Widget _dayView() {
@@ -651,11 +721,13 @@ class _EventCard extends StatelessWidget {
 
 class _WeekGrid extends StatelessWidget {
   final DateTime monday;
+  final int dayCount;
   final List<_EdtEvent> events;
   final ValueChanged<_EdtEvent> onTap;
 
   const _WeekGrid({
     required this.monday,
+    required this.dayCount,
     required this.events,
     required this.onTap,
   });
@@ -684,7 +756,7 @@ class _WeekGrid extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final dayWidth = (constraints.maxWidth - _gutterWidth) / 7;
+          final dayWidth = (constraints.maxWidth - _gutterWidth) / dayCount;
           return Column(
             children: [
               SizedBox(
@@ -692,7 +764,7 @@ class _WeekGrid extends StatelessWidget {
                 child: Row(
                   children: [
                     const SizedBox(width: _gutterWidth),
-                    for (var jour = 1; jour <= 7; jour++)
+                    for (var jour = 1; jour <= dayCount; jour++)
                       SizedBox(
                         width: dayWidth,
                         child: _DayHeader(
@@ -741,7 +813,7 @@ class _WeekGrid extends StatelessWidget {
                               endHour: endHour,
                               hourHeight: _hourHeight,
                             ),
-                            for (var jour = 1; jour <= 7; jour++)
+                            for (var jour = 1; jour <= dayCount; jour++)
                               SizedBox(
                                 width: dayWidth,
                                 height: gridHeight,

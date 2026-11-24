@@ -8,6 +8,11 @@ void main() {
         id: '42',
         titre: 'DM n°4',
         matiere: 'Maths',
+        description: 'Suites et intégrales',
+        sousTaches: [
+          DevoirSousTache(id: 's1', texte: 'Suites', fait: true),
+          DevoirSousTache(id: 's2', texte: 'Intégrales'),
+        ],
         echeance: DateTime(2026, 11, 25),
         fait: true,
         creeLe: DateTime(2026, 11, 20, 18, 30),
@@ -18,9 +23,29 @@ void main() {
       expect(copy.id, devoir.id);
       expect(copy.titre, devoir.titre);
       expect(copy.matiere, devoir.matiere);
+      expect(copy.description, 'Suites et intégrales');
+      expect(copy.type, DevoirType.devoirMaison);
+      expect(copy.sousTaches, hasLength(2));
+      expect(copy.sousTaches.first.texte, 'Suites');
+      expect(copy.sousTaches.first.fait, isTrue);
       expect(copy.echeance, devoir.echeance);
       expect(copy.fait, isTrue);
       expect(copy.creeLe, devoir.creeLe);
+    });
+
+    test('reste compatible avec un ancien fichier', () {
+      final devoir = Devoir.fromJson({
+        'id': '1',
+        'titre': 'Éval de maths',
+        'matiere': 'Maths',
+        'echeance': '2026-11-25T00:00:00.000',
+        'fait': false,
+        'creeLe': '2026-11-20T00:00:00.000',
+      });
+
+      expect(devoir.description, isEmpty);
+      expect(devoir.sousTaches, isEmpty);
+      expect(devoir.type, DevoirType.evaluation);
     });
 
     test('classe les échéances par jour', () {
@@ -49,6 +74,42 @@ void main() {
         daysBetween(DateTime(2026, 3, 28, 23), DateTime(2026, 3, 30, 1)),
         2,
       );
+    });
+  });
+
+  group('détection du type', () {
+    test('reconnaît les évaluations', () {
+      expect(detectDevoirType('Éval de maths jeudi'), DevoirType.evaluation);
+      expect(detectDevoirType('DS n°3'), DevoirType.evaluation);
+      expect(detectDevoirType('Contrôle continu'), DevoirType.evaluation);
+      expect(detectDevoirType('Khôlle d’anglais'), DevoirType.evaluation);
+    });
+
+    test('reconnaît les devoirs maison et les exercices', () {
+      expect(detectDevoirType('DM n°4'), DevoirType.devoirMaison);
+      expect(detectDevoirType('Devoir maison'), DevoirType.devoirMaison);
+      expect(detectDevoirType('Exercices 12 à 15'), DevoirType.exercices);
+      expect(detectDevoirType('TD de physique'), DevoirType.exercices);
+    });
+
+    test('reconnaît les révisions et le reste', () {
+      expect(detectDevoirType('Relire le cours'), DevoirType.revision);
+      expect(detectDevoirType('Fiche de formules'), DevoirType.revision);
+      expect(detectDevoirType('Acheter des copies'), DevoirType.autre);
+      expect(detectDevoirType(''), DevoirType.autre);
+    });
+
+    test('le constructeur déduit le type des détails', () {
+      final devoir = Devoir(
+        id: '1',
+        titre: 'Maths jeudi',
+        matiere: 'Maths',
+        description: 'Les notions à voir',
+        sousTaches: [DevoirSousTache(id: 'sub', texte: 'Éval sur les suites')],
+        echeance: DateTime(2026, 11, 26),
+      );
+
+      expect(devoir.type, DevoirType.evaluation);
     });
   });
 

@@ -27,6 +27,54 @@ String _two(int n) => n.toString().padLeft(2, '0');
 String _formatDate(DateTime date) =>
     '${date.day} ${_moisCourts[date.month - 1]} ${date.year}';
 
+extension _DevoirTypeUi on DevoirType {
+  String get label => switch (this) {
+    DevoirType.evaluation => 'Éval',
+    DevoirType.devoirMaison => 'DM',
+    DevoirType.exercices => 'Exercices',
+    DevoirType.revision => 'Révision',
+    DevoirType.autre => 'Autre',
+  };
+
+  IconData get icon => switch (this) {
+    DevoirType.evaluation => Icons.quiz_outlined,
+    DevoirType.devoirMaison => Icons.home_work_outlined,
+    DevoirType.exercices => Icons.edit_note,
+    DevoirType.revision => Icons.menu_book_outlined,
+    DevoirType.autre => Icons.task_outlined,
+  };
+}
+
+class _DevoirPalette {
+  final Color container;
+  final Color onContainer;
+
+  const _DevoirPalette(this.container, this.onContainer);
+}
+
+_DevoirPalette _paletteFor(ColorScheme cs, DevoirType type) => switch (type) {
+  DevoirType.evaluation => _DevoirPalette(
+    cs.errorContainer,
+    cs.onErrorContainer,
+  ),
+  DevoirType.devoirMaison => _DevoirPalette(
+    cs.tertiaryContainer,
+    cs.onTertiaryContainer,
+  ),
+  DevoirType.exercices => _DevoirPalette(
+    cs.primaryContainer,
+    cs.onPrimaryContainer,
+  ),
+  DevoirType.revision => _DevoirPalette(
+    cs.secondaryContainer,
+    cs.onSecondaryContainer,
+  ),
+  DevoirType.autre => _DevoirPalette(
+    cs.surfaceContainerHighest,
+    cs.onSurfaceVariant,
+  ),
+};
+
 class DevoirsPage extends StatefulWidget {
   final ValueNotifier<DevoirDraft?>? draftRequest;
 
@@ -156,6 +204,23 @@ class _DevoirsPageState extends State<DevoirsPage> {
       for (final item in _devoirs)
         if (item.id == devoir.id) item.copyWith(fait: !item.fait) else item,
     ]);
+  }
+
+  Future<void> _toggleSousTache(
+    Devoir devoir,
+    DevoirSousTache sousTache,
+  ) async {
+    await _saveDevoir(
+      devoir.copyWith(
+        sousTaches: [
+          for (final item in devoir.sousTaches)
+            if (item.id == sousTache.id)
+              item.copyWith(fait: !item.fait)
+            else
+              item,
+        ],
+      ),
+    );
   }
 
   Future<void> _delete(Devoir devoir) async {
@@ -483,10 +548,17 @@ class _DevoirsPageState extends State<DevoirsPage> {
 
   Widget _buildTile(BuildContext context, Devoir devoir, DateTime now) {
     final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final palette = _paletteFor(cs, devoir.type);
     final details = [
       if (devoir.matiere.isNotEmpty) devoir.matiere,
       _dueLabel(devoir, now),
     ].join(' · ');
+    final doneSubtasks = devoir.sousTaches.where((item) => item.fait).length;
+    final cardColor = Color.alphaBlend(
+      palette.container.withValues(alpha: 0.45),
+      cs.surface,
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Dismissible(
@@ -502,27 +574,114 @@ class _DevoirsPageState extends State<DevoirsPage> {
           child: Icon(Icons.delete_outline, color: cs.onErrorContainer),
         ),
         onDismissed: (_) => unawaited(_delete(devoir)),
-        child: Card.filled(
+        child: Card(
           margin: EdgeInsets.zero,
+          color: cardColor,
           clipBehavior: Clip.antiAlias,
-          child: ListTile(
-            leading: Checkbox(
-              value: devoir.fait,
-              onChanged: (_) => unawaited(_toggle(devoir)),
-            ),
-            title: Text(
-              devoir.titre.isEmpty ? 'Sans titre' : devoir.titre,
-              style: devoir.fait
-                  ? const TextStyle(decoration: TextDecoration.lineThrough)
-                  : null,
-            ),
-            subtitle: Text(details),
-            trailing: IconButton(
-              tooltip: 'Modifier',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => unawaited(_openForm(initial: devoir)),
-            ),
-            onTap: () => unawaited(_openForm(initial: devoir)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: Checkbox(
+                  value: devoir.fait,
+                  onChanged: (_) => unawaited(_toggle(devoir)),
+                ),
+                title: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        devoir.titre.isEmpty ? 'Sans titre' : devoir.titre,
+                        style: devoir.fait
+                            ? const TextStyle(
+                                decoration: TextDecoration.lineThrough,
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _DevoirTypeBadge(type: devoir.type, palette: palette),
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(details),
+                    if (devoir.description.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        devoir.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (devoir.sousTaches.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: doneSubtasks / devoir.sousTaches.length,
+                                minHeight: 5,
+                                color: palette.onContainer,
+                                backgroundColor: palette.container,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '$doneSubtasks/${devoir.sousTaches.length}',
+                            style: tt.labelSmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+                isThreeLine:
+                    devoir.description.isNotEmpty ||
+                    devoir.sousTaches.isNotEmpty,
+                trailing: IconButton(
+                  tooltip: 'Modifier',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => unawaited(_openForm(initial: devoir)),
+                ),
+                onTap: () => unawaited(_openForm(initial: devoir)),
+              ),
+              if (devoir.sousTaches.isNotEmpty) ...[
+                Divider(
+                  height: 1,
+                  color: palette.onContainer.withValues(alpha: 0.12),
+                ),
+                for (final sousTache in devoir.sousTaches)
+                  CheckboxListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: const EdgeInsets.only(left: 48, right: 8),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: sousTache.fait,
+                    onChanged: (_) =>
+                        unawaited(_toggleSousTache(devoir, sousTache)),
+                    title: Text(
+                      sousTache.texte,
+                      style: tt.bodyMedium?.copyWith(
+                        color: sousTache.fait
+                            ? cs.onSurfaceVariant
+                            : cs.onSurface,
+                        decoration: sousTache.fait
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
           ),
         ),
       ),
@@ -554,6 +713,47 @@ class _DevoirsPageState extends State<DevoirsPage> {
   }
 }
 
+class _DevoirTypeBadge extends StatelessWidget {
+  final DevoirType type;
+  final _DevoirPalette palette;
+
+  const _DevoirTypeBadge({required this.type, required this.palette});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.container,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(type.icon, size: 12, color: palette.onContainer),
+          const SizedBox(width: 3),
+          Text(
+            type.label,
+            style: tt.labelSmall?.copyWith(color: palette.onContainer),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SousTacheDraft {
+  final String id;
+  final TextEditingController texte;
+  bool fait;
+
+  _SousTacheDraft({required this.id, String texte = '', this.fait = false})
+    : texte = TextEditingController(text: texte);
+
+  void dispose() => texte.dispose();
+}
+
 class _DevoirForm extends StatefulWidget {
   final Devoir? initial;
   final DevoirDraft? draft;
@@ -574,6 +774,9 @@ class _DevoirForm extends StatefulWidget {
 class _DevoirFormState extends State<_DevoirForm> {
   late final TextEditingController _titre;
   late final TextEditingController _matiere;
+  late final TextEditingController _description;
+  late final List<_SousTacheDraft> _sousTaches;
+  DevoirType? _typeOverride;
   late DateTime _echeance;
   late bool _fait;
   String? _error;
@@ -587,6 +790,12 @@ class _DevoirFormState extends State<_DevoirForm> {
     _matiere = TextEditingController(
       text: initial?.matiere ?? draft?.matiere ?? '',
     );
+    _description = TextEditingController(text: initial?.description ?? '');
+    _sousTaches = [
+      for (final item in initial?.sousTaches ?? const <DevoirSousTache>[])
+        _SousTacheDraft(id: item.id, texte: item.texte, fait: item.fait),
+    ];
+    _typeOverride = initial?.type;
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     _echeance =
         initial?.echeance ??
@@ -598,7 +807,64 @@ class _DevoirFormState extends State<_DevoirForm> {
   void dispose() {
     _titre.dispose();
     _matiere.dispose();
+    _description.dispose();
+    for (final item in _sousTaches) {
+      item.dispose();
+    }
     super.dispose();
+  }
+
+  DevoirType get _detectedType => detectDevoirType(
+    [
+      _titre.text,
+      _description.text,
+      for (final item in _sousTaches) item.texte.text,
+    ].join(' '),
+  );
+
+  DevoirType get _type => _typeOverride ?? _detectedType;
+
+  void _onTextChanged() {
+    setState(() {
+      _error = null;
+      _typeOverride = null;
+    });
+  }
+
+  void _addSousTache() {
+    setState(() {
+      _sousTaches.add(
+        _SousTacheDraft(
+          id: '${DateTime.now().microsecondsSinceEpoch}-${_sousTaches.length}',
+        ),
+      );
+    });
+  }
+
+  void _removeSousTache(int index) {
+    final removed = _sousTaches.removeAt(index);
+    removed.dispose();
+    setState(() {});
+  }
+
+  Widget _typeChip(DevoirType type) {
+    final cs = Theme.of(context).colorScheme;
+    final palette = _paletteFor(cs, type);
+    final selected = _type == type;
+    return ChoiceChip(
+      selected: selected,
+      selectedColor: palette.container,
+      avatar: Icon(
+        type.icon,
+        size: 16,
+        color: selected ? palette.onContainer : cs.onSurfaceVariant,
+      ),
+      label: Text(type.label),
+      labelStyle: TextStyle(
+        color: selected ? palette.onContainer : cs.onSurface,
+      ),
+      onSelected: (_) => setState(() => _typeOverride = type),
+    );
   }
 
   Future<void> _pickDate() async {
@@ -623,12 +889,24 @@ class _DevoirFormState extends State<_DevoirForm> {
       return;
     }
     final initial = widget.initial;
+    final sousTaches = [
+      for (final item in _sousTaches)
+        if (item.texte.text.trim().isNotEmpty)
+          DevoirSousTache(
+            id: item.id,
+            texte: item.texte.text.trim(),
+            fait: item.fait,
+          ),
+    ];
     Navigator.pop(
       context,
       Devoir(
         id: initial?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         titre: titre,
         matiere: _matiere.text.trim(),
+        description: _description.text.trim(),
+        type: _type,
+        sousTaches: sousTaches,
         echeance: _echeance,
         fait: _fait,
         creeLe: initial?.creeLe ?? DateTime.now(),
@@ -685,6 +963,7 @@ class _DevoirFormState extends State<_DevoirForm> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final editing = widget.initial != null;
+    final doneSubtasks = _sousTaches.where((item) => item.fait).length;
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
@@ -706,9 +985,7 @@ class _DevoirFormState extends State<_DevoirForm> {
             controller: _titre,
             textCapitalization: TextCapitalization.sentences,
             textInputAction: TextInputAction.next,
-            onChanged: (_) {
-              if (_error != null) setState(() => _error = null);
-            },
+            onChanged: (_) => _onTextChanged(),
             decoration: InputDecoration(
               labelText: 'À faire',
               hintText: 'DM n°4, exercices 12 à 15…',
@@ -758,12 +1035,106 @@ class _DevoirFormState extends State<_DevoirForm> {
                   label: Text(idea),
                   onPressed: () {
                     _titre.text = idea;
-                    if (_error != null) setState(() => _error = null);
+                    setState(() {
+                      _error = null;
+                      _typeOverride = null;
+                    });
                   },
                 ),
             ],
           ),
           const SizedBox(height: 16),
+          TextField(
+            controller: _description,
+            minLines: 2,
+            maxLines: 4,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Description (facultatif)',
+              hintText: 'Notions à revoir, pages, consignes…',
+              alignLabelWithHint: true,
+              prefixIcon: Icon(Icons.notes),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => _onTextChanged(),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Text('Type', style: tt.titleSmall),
+              const Spacer(),
+              Text(
+                _typeOverride == null ? 'Détection automatique' : 'Type actuel',
+                style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [for (final type in DevoirType.values) _typeChip(type)],
+          ),
+          if (_typeOverride != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _typeOverride = null),
+                icon: const Icon(Icons.auto_awesome, size: 16),
+                label: const Text('Détection auto'),
+              ),
+            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text('Sous-tâches', style: tt.titleSmall),
+              const Spacer(),
+              if (_sousTaches.isNotEmpty)
+                Text(
+                  '$doneSubtasks/${_sousTaches.length}',
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < _sousTaches.length; i++) ...[
+            Row(
+              children: [
+                Checkbox(
+                  value: _sousTaches[i].fait,
+                  onChanged: (value) =>
+                      setState(() => _sousTaches[i].fait = value ?? false),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _sousTaches[i].texte,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      hintText: 'Notion, exercice, page…',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => _onTextChanged(),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Retirer',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => _removeSousTache(i),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _addSousTache,
+              icon: const Icon(Icons.add_task),
+              label: const Text('Ajouter une sous-tâche'),
+            ),
+          ),
+          const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.event_outlined),

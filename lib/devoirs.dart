@@ -6,10 +6,43 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum DevoirBucket { overdue, today, tomorrow, thisWeek, later, done }
 
+enum DevoirType { evaluation, devoirMaison, exercices, revision, autre }
+
+class DevoirSousTache {
+  final String id;
+  final String texte;
+  final bool fait;
+
+  DevoirSousTache({required this.id, required this.texte, this.fait = false});
+
+  DevoirSousTache copyWith({String? texte, bool? fait}) => DevoirSousTache(
+    id: id,
+    texte: texte ?? this.texte,
+    fait: fait ?? this.fait,
+  );
+
+  Map<String, dynamic> toJson() => {'id': id, 'texte': texte, 'fait': fait};
+
+  factory DevoirSousTache.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id']?.toString();
+    final texte = json['texte']?.toString().trim() ?? '';
+    return DevoirSousTache(
+      id: rawId == null || rawId.isEmpty
+          ? 'sub-${DateTime.now().microsecondsSinceEpoch}-${texte.hashCode}'
+          : rawId,
+      texte: texte,
+      fait: json['fait'] == true,
+    );
+  }
+}
+
 class Devoir {
   final String id;
   final String titre;
   final String matiere;
+  final String description;
+  final DevoirType type;
+  final List<DevoirSousTache> sousTaches;
   final DateTime echeance;
   final bool fait;
   final DateTime creeLe;
@@ -18,21 +51,38 @@ class Devoir {
     required this.id,
     required this.titre,
     required this.matiere,
+    String description = '',
+    DevoirType? type,
+    List<DevoirSousTache>? sousTaches,
     required DateTime echeance,
     this.fait = false,
     DateTime? creeLe,
-  }) : echeance = DateTime(echeance.year, echeance.month, echeance.day),
+  }) : description = description.trim(),
+       type =
+           type ??
+           detectDevoirType(
+             '$titre $description '
+             '${(sousTaches ?? const <DevoirSousTache>[]).map((t) => t.texte).join(' ')}',
+           ),
+       sousTaches = List.unmodifiable(sousTaches ?? const <DevoirSousTache>[]),
+       echeance = DateTime(echeance.year, echeance.month, echeance.day),
        creeLe = creeLe ?? DateTime.now();
 
   Devoir copyWith({
     String? titre,
     String? matiere,
+    String? description,
+    DevoirType? type,
+    List<DevoirSousTache>? sousTaches,
     DateTime? echeance,
     bool? fait,
   }) => Devoir(
     id: id,
     titre: titre ?? this.titre,
     matiere: matiere ?? this.matiere,
+    description: description ?? this.description,
+    type: type ?? this.type,
+    sousTaches: sousTaches ?? this.sousTaches,
     echeance: echeance ?? this.echeance,
     fait: fait ?? this.fait,
     creeLe: creeLe,
@@ -42,6 +92,9 @@ class Devoir {
     'id': id,
     'titre': titre,
     'matiere': matiere,
+    'description': description,
+    'type': type.name,
+    'sousTaches': [for (final item in sousTaches) item.toJson()],
     'echeance': echeance.toIso8601String(),
     'fait': fait,
     'creeLe': creeLe.toIso8601String(),
@@ -51,12 +104,29 @@ class Devoir {
     final rawId = json['id']?.toString();
     final echeance = DateTime.tryParse(json['echeance']?.toString() ?? '');
     final creeLe = DateTime.tryParse(json['creeLe']?.toString() ?? '');
+    final rawSousTaches = json['sousTaches'];
+    final sousTaches = <DevoirSousTache>[
+      if (rawSousTaches is List)
+        for (final item in rawSousTaches)
+          if (item is Map) DevoirSousTache.fromJson(Map.from(item)),
+    ];
+    DevoirType? type;
+    final rawType = json['type']?.toString();
+    for (final candidate in DevoirType.values) {
+      if (candidate.name == rawType) {
+        type = candidate;
+        break;
+      }
+    }
     return Devoir(
       id: rawId == null || rawId.isEmpty
           ? DateTime.now().microsecondsSinceEpoch.toString()
           : rawId,
       titre: json['titre']?.toString().trim() ?? '',
       matiere: json['matiere']?.toString().trim() ?? '',
+      description: json['description']?.toString() ?? '',
+      type: type,
+      sousTaches: sousTaches,
       echeance: echeance ?? DateTime.now(),
       fait: json['fait'] == true,
       creeLe: creeLe,
@@ -113,6 +183,87 @@ String _fold(String value) {
     result = result.replaceAll(entry.key, entry.value);
   }
   return result.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+}
+
+DevoirType detectDevoirType(String input) {
+  final folded = _fold(input);
+  if (folded.isEmpty) return DevoirType.autre;
+  final words = folded.split(' ').toSet();
+  bool hasAny(Set<String> keywords) => keywords.any(words.contains);
+
+  if (folded.contains('devoir surveille') ||
+      hasAny({
+        'eval',
+        'evaluation',
+        'evaluations',
+        'ds',
+        'controle',
+        'controles',
+        'interro',
+        'interrogation',
+        'interrogations',
+        'khole',
+        'kholle',
+        'kholles',
+        'colle',
+        'colles',
+        'oral',
+        'oraux',
+        'partiel',
+        'partiels',
+        'examen',
+        'examens',
+        'test',
+        'tests',
+      })) {
+    return DevoirType.evaluation;
+  }
+  if (folded.contains('devoir maison') ||
+      hasAny({
+        'dm',
+        'dms',
+        'projet',
+        'projets',
+        'expose',
+        'exposes',
+        'rendu',
+        'rendus',
+      })) {
+    return DevoirType.devoirMaison;
+  }
+  if (hasAny({
+    'exercice',
+    'exercices',
+    'exo',
+    'exos',
+    'td',
+    'tp',
+    'probleme',
+    'problemes',
+    'calcul',
+    'calculs',
+  })) {
+    return DevoirType.exercices;
+  }
+  if (hasAny({
+    'relire',
+    'revoir',
+    'reviser',
+    'revision',
+    'revisions',
+    'apprendre',
+    'fiche',
+    'fiches',
+    'memoriser',
+    'vocabulaire',
+    'lecon',
+    'lecons',
+    'notion',
+    'notions',
+  })) {
+    return DevoirType.revision;
+  }
+  return DevoirType.autre;
 }
 
 /// Un cours de sport ou un DS ne déclenche pas la suggestion de fin de cours.
