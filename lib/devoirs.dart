@@ -205,6 +205,9 @@ DevoirType detectDevoirType(String input) {
         'khole',
         'kholle',
         'kholles',
+        'khôle',
+        'khôlle',
+        'khôlles',
         'colle',
         'colles',
         'oral',
@@ -232,6 +235,8 @@ DevoirType detectDevoirType(String input) {
     return DevoirType.devoirMaison;
   }
   if (hasAny({
+    'AD',
+    'ADC',
     'exercice',
     'exercices',
     'exo',
