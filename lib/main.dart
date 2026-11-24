@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -49,11 +51,18 @@ class RootPage extends StatefulWidget {
 
 class _RootPageState extends State<RootPage> {
   int currentPageIndex = 0;
+  Timer? _updateTimer;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 4), _checkUpdate);
+    _updateTimer = Timer(const Duration(seconds: 4), _checkUpdate);
+  }
+
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkUpdate() async {
