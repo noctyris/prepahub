@@ -8,7 +8,7 @@ Built with [Flutter](https://flutter.dev) (Dart), with Material You (Material 3)
 
 ## Features
 
-* Log in to a PRÉPA+ account from within the app
+* Log in to your school's PRÉPA+ portal (custom portal URL supported)
 * Grades displayed week by week (subject, grade, teacher, rank, average, standard deviation)
 * Persistent session: the app logs back in automatically on launch (credentials stored locally on the device)
 * Material You: adapts to your system palette on Android 12+
@@ -41,7 +41,7 @@ The APK is generated in `build/app/outputs/flutter-apk/`.
 
 ## Security
 
-Credentials are stored in the app's private data directory (SharedPreferences) and are never sent anywhere other than the PRÉPA+ server.
+Credentials are stored in the app's private data directory (SharedPreferences) and are never sent anywhere other than the portal server you configured.
 
 ## License
 

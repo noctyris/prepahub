@@ -42,7 +42,11 @@ class _NotesPageState extends State<NotesPage> {
       return;
     }
     try {
-      final s = await getNotes(creds.username, creds.password);
+      final s = await getNotes(
+        creds.username,
+        creds.password,
+        portal: creds.portal,
+      );
       if (!mounted) return;
       setState(() {
         semaines = s;
@@ -68,7 +72,11 @@ class _NotesPageState extends State<NotesPage> {
       return;
     }
     try {
-      final s = await getNotes(creds.username, creds.password);
+      final s = await getNotes(
+        creds.username,
+        creds.password,
+        portal: creds.portal,
+      );
       if (mounted) setState(() => semaines = s);
     } on AuthException {
       await _logout();

@@ -8,7 +8,7 @@ Réalisée avec [Flutter](https://flutter.dev) (Dart), avec support Material You
 
 ## Fonctionnalités
 
-* Connexion à un compte PRÉPA+ depuis l'application
+* Connexion au portail PRÉPA+ de ton lycée (URL personnalisable)
 * Notes affichées semaine par semaine (matière, note, professeur, classement, moyenne, écart-type)
 * Session persistante : l'application se reconnecte automatiquement au lancement (identifiants stockés localement sur l'appareil)
 * Material You : s'adapte à la palette de ton système sur Android 12+
@@ -53,7 +53,7 @@ L'APK est généré dans `build/app/outputs/flutter-apk/`.
 
 ## Sécurité
 
-Les identifiants sont stockés dans le répertoire privé de l'application (SharedPreferences) et ne sont jamais envoyés ailleurs qu'au serveur PRÉPA+.
+Les identifiants sont stockés dans le répertoire privé de l'application (SharedPreferences) et ne sont jamais envoyés ailleurs qu'au serveur du portail que tu as configuré.
 
 ## Licence
 

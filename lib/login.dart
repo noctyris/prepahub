@@ -14,14 +14,30 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final username = TextEditingController();
   final password = TextEditingController();
+  final portal = TextEditingController(text: defaultPortal);
   bool busy = false;
   bool hidePassword = true;
   String? error;
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedPortal();
+  }
+
+  Future<void> _loadSavedPortal() async {
+    try {
+      final saved = await loadPortal();
+      if (!mounted || portal.text != defaultPortal) return;
+      portal.text = saved;
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
     username.dispose();
     password.dispose();
+    portal.dispose();
     super.dispose();
   }
 
@@ -32,18 +48,33 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => error = 'Renseigne ton identifiant et ton mot de passe');
       return;
     }
+
+    late final String base;
+    try {
+      base = normalizePortal(portal.text);
+    } on NetworkException catch (e) {
+      setState(() => error = e.message);
+      return;
+    }
+
     setState(() {
       busy = true;
       error = null;
     });
     try {
-      final s = await getNotes(user, pass);
-      await saveCreds(Creds(username: user, password: pass));
+      // On conserve le portail même si les identifiants sont refusés.
+      await savePortal(base);
+      final s = await getNotes(user, pass, portal: base);
+      await saveCreds(
+        Creds(username: user, password: pass, portal: base),
+      );
       if (mounted) widget.onSuccess(s);
     } on AuthException catch (e) {
       if (mounted) setState(() => error = e.message);
     } on NetworkException catch (e) {
       if (mounted) setState(() => error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => error = 'Connexion impossible');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -80,10 +111,26 @@ class _LoginPageState extends State<LoginPage> {
                     Text('PrepaHub',
                         textAlign: TextAlign.center, style: tt.headlineMedium),
                     const SizedBox(height: 4),
-                    Text('Connecte-toi avec ton compte PRÉPA+',
+                    Text('Connecte-toi avec le compte de ton lycée',
                         textAlign: TextAlign.center,
                         style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                     const SizedBox(height: 32),
+                    TextField(
+                      controller: portal,
+                      enabled: !busy,
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Portail',
+                        hintText: defaultPortal,
+                        helperText: "L'adresse du site PRÉPA+ de ton lycée",
+                        prefixIcon: Icon(Icons.language),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: username,
                       enabled: !busy,

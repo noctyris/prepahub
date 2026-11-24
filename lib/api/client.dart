@@ -6,9 +6,44 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'parse.dart';
 
-const base = 'https://cpgedupuydelome.prepas-plus.fr';
-const loginUrl = '$base/account/login/';
-const notesUrl = '$base/colles/mes_notes';
+const defaultPortal = 'https://cpgedupuydelome.prepas-plus.fr';
+
+/// Nettoie l'adresse saisie par l'utilisateur et vérifie qu'elle est utilisable.
+/// Accepte un domaine sans schéma et retire un éventuel chemin de connexion ou
+/// de notes collé depuis la barre d'adresse.
+String normalizePortal(String input) {
+  var value = input.trim();
+  if (value.isEmpty) {
+    throw const NetworkException('Adresse du portail vide');
+  }
+  if (!value.contains('://')) value = 'https://$value';
+  final uri = Uri.tryParse(value);
+  if (uri == null ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      uri.host.isEmpty) {
+    throw const NetworkException('Adresse du portail invalide');
+  }
+
+  var path = uri.path;
+  for (final suffix in const [
+    '/account/login/',
+    '/account/login',
+    '/colles/mes_notes/',
+    '/colles/mes_notes',
+  ]) {
+    if (path.endsWith(suffix)) {
+      path = path.substring(0, path.length - suffix.length);
+      break;
+    }
+  }
+  path = path.replaceAll(RegExp(r'/+$'), '');
+  return Uri(
+    scheme: uri.scheme,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+    path: path,
+  ).toString();
+}
 
 class AuthException implements Exception {
   final String message;
@@ -27,27 +62,58 @@ class NetworkException implements Exception {
 class Creds {
   final String username;
   final String password;
-  Creds({required this.username, required this.password});
+  final String portal;
+
+  Creds({
+    required this.username,
+    required this.password,
+    String? portal,
+  }) : portal = portal ?? defaultPortal;
+}
+
+const _usernameKey = 'username';
+const _passwordKey = 'password';
+const _portalKey = 'portal';
+
+Future<String> loadPortal() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_portalKey) ?? defaultPortal;
+  try {
+    return normalizePortal(raw);
+  } catch (_) {
+    return defaultPortal;
+  }
+}
+
+Future<void> savePortal(String portal) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_portalKey, normalizePortal(portal));
 }
 
 Future<Creds?> loadCreds() async {
   final prefs = await SharedPreferences.getInstance();
-  final user = prefs.getString('username');
-  final pass = prefs.getString('password');
+  final user = prefs.getString(_usernameKey);
+  final pass = prefs.getString(_passwordKey);
   if (user == null || pass == null) return null;
-  return Creds(username: user, password: pass);
+  return Creds(
+    username: user,
+    password: pass,
+    portal: await loadPortal(),
+  );
 }
 
 Future<void> saveCreds(Creds creds) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('username', creds.username);
-  await prefs.setString('password', creds.password);
+  await prefs.setString(_usernameKey, creds.username);
+  await prefs.setString(_passwordKey, creds.password);
+  await prefs.setString(_portalKey, normalizePortal(creds.portal));
 }
 
 Future<void> clearCreds() async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.remove('username');
-  await prefs.remove('password');
+  await prefs.remove(_usernameKey);
+  await prefs.remove(_passwordKey);
+  // Le portail est conservé pour préremplir la prochaine connexion.
 }
 
 class _Session {
@@ -118,7 +184,14 @@ class _Session {
   }
 }
 
-Future<List<Semaine>> getNotes(String username, String password) async {
+Future<List<Semaine>> getNotes(
+  String username,
+  String password, {
+  String? portal,
+}) async {
+  final base = normalizePortal(portal ?? defaultPortal);
+  final loginUrl = '$base/account/login/';
+  final notesUrl = '$base/colles/mes_notes';
   final session = _Session();
   try {
     final page = await session.get(Uri.parse(loginUrl));
