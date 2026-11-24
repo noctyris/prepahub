@@ -14,18 +14,6 @@ Built with [Flutter](https://flutter.dev) (Dart), with Material You (Material 3)
 * Material You: adapts to your system palette on Android 12+
 * Available on Android and desktop (Linux)
 
-## Roadmap
-
-* [ ] Pronote integration
-* [ ] Home screen widgets
-* [ ] Notifications when a new grade is published
-* [ ] Error handling (invalid credentials, no network, spinners…)
-* [ ] Builds for multiple phone architectures
-* [ ] Offline caching of grades
-* [x] Offline timetable and _khôlle_ (oral exam) schedule
-* [x] Keep credentials between app launches
-* [x] Material You dynamic color
-
 ## Building
 
 ### Prerequisites
