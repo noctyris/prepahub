@@ -7,6 +7,7 @@ import 'app_settings.dart';
 import 'devoirs.dart';
 import 'devoirs_notifications.dart';
 import 'devoirs_page.dart';
+import 'navigation_settings.dart';
 
 String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -110,6 +111,55 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<void> _chooseStartPage() async {
+    final settings = widget.settings;
+    final available = [...settings.navBar, ...settings.navMenu];
+    final picked = await showDialog<AppSection>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text("Page d'ouverture"),
+        children: [
+          for (final section in available)
+            ListTile(
+              leading: Icon(section.icon),
+              title: Text(section.label),
+              trailing: settings.startSection == section
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, section),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted || picked == settings.startSection) return;
+    await _update(settings.copyWith(startSection: picked));
+  }
+
+  Future<void> _openNavigation() async {
+    final next = await Navigator.of(context).push<AppSettings>(
+      MaterialPageRoute(
+        builder: (_) => NavigationSettingsPage(settings: widget.settings),
+      ),
+    );
+    if (next == null || !mounted) return;
+    await _update(next);
+  }
+
+  String get _navSummary {
+    final settings = widget.settings;
+    final bar = settings.navBar.map((section) => section.label).join(' · ');
+    final extras = <String>[
+      if (settings.navMenu.isNotEmpty)
+        '${settings.navMenu.length} dans le menu',
+      if (settings.hiddenSections.isNotEmpty)
+        '${settings.hiddenSections.length} '
+            'masquée${settings.hiddenSections.length > 1 ? 's' : ''}',
+    ];
+    return extras.isEmpty
+        ? 'Barre : $bar'
+        : 'Barre : $bar\n${extras.join(' · ')}';
+  }
+
   String get _reminderSummary {
     if (!DevoirNotifications.instance.isSupported) {
       return 'Non disponible sur cet appareil';
@@ -209,6 +259,31 @@ class _SettingsPageState extends State<SettingsPage> {
                   value: settings.amoledBlack,
                   onChanged: (value) =>
                       unawaited(_update(settings.copyWith(amoledBlack: value))),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _sectionTitle(context, 'Navigation'),
+          Card.filled(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.home_outlined),
+                  title: const Text("Page d'ouverture"),
+                  subtitle: Text(settings.startSection.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseStartPage,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.view_sidebar_outlined),
+                  title: const Text('Barre du bas et menu'),
+                  subtitle: Text(_navSummary),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openNavigation,
                 ),
               ],
             ),

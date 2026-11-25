@@ -119,7 +119,7 @@ class RootPage extends StatefulWidget {
 }
 
 class _RootPageState extends State<RootPage> {
-  int currentPageIndex = 0;
+  late AppSection _current;
   Timer? _updateTimer;
   final ValueNotifier<DevoirDraft?> _devoirDraftRequest =
       ValueNotifier<DevoirDraft?>(null);
@@ -127,11 +127,12 @@ class _RootPageState extends State<RootPage> {
   @override
   void initState() {
     super.initState();
+    _current = widget.settings.startSection;
 
     final initialTap = devoirNotificationTap.value;
     if (initialTap != null) {
       devoirNotificationTap.value = null;
-      currentPageIndex = 2;
+      _current = AppSection.devoirs;
       if (initialTap.matiere != null) {
         _devoirDraftRequest.value = DevoirDraft(matiere: initialTap.matiere);
       }
@@ -160,7 +161,7 @@ class _RootPageState extends State<RootPage> {
     if (tap == null) return;
     devoirNotificationTap.value = null;
     if (!mounted) return;
-    setState(() => currentPageIndex = 2);
+    setState(() => _current = AppSection.devoirs);
     if (tap.matiere != null) {
       _devoirDraftRequest.value = DevoirDraft(matiere: tap.matiere);
     }
@@ -177,51 +178,89 @@ class _RootPageState extends State<RootPage> {
   }
 
   @override
+  void didUpdateWidget(RootPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.settings.isAvailable(_current)) {
+      _current = widget.settings.startSection;
+    }
+  }
+
+  Future<void> _openMenu() async {
+    final sections = widget.settings.navMenu;
+    if (sections.isEmpty) return;
+    final picked = await showModalBottomSheet<AppSection>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text('Menu', style: Theme.of(ctx).textTheme.titleLarge),
+            ),
+            for (final section in sections)
+              ListTile(
+                leading: Icon(section.icon),
+                title: Text(section.label),
+                selected: section == _current,
+                onTap: () => Navigator.pop(ctx, section),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _current = picked);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final settings = widget.settings;
+    final bar = settings.navBar;
+    var selectedIndex = bar.indexOf(_current);
+    if (selectedIndex < 0) {
+      selectedIndex = settings.navMenu.contains(_current) ? bar.length : 0;
+    }
     return Scaffold(
       bottomNavigationBar: NavigationBar(
         onDestinationSelected: (int index) {
-          setState(() {
-            currentPageIndex = index;
-          });
+          if (index >= bar.length) {
+            unawaited(_openMenu());
+            return;
+          }
+          setState(() => _current = bar[index]);
         },
-        selectedIndex: currentPageIndex,
-        destinations: const <Widget>[
-          NavigationDestination(
-            selectedIcon: Icon(Icons.pie_chart),
-            icon: Icon(Icons.pie_chart_outline),
-            label: 'Notes',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.calendar_month),
-            icon: Icon(Icons.calendar_month_outlined),
-            label: 'Planning',
-          ),
-          NavigationDestination(icon: Icon(Icons.checklist), label: 'Devoirs'),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.settings),
-            icon: Icon(Icons.settings_outlined),
-            label: 'Réglages',
-          ),
+        selectedIndex: selectedIndex,
+        destinations: [
+          for (final section in bar)
+            NavigationDestination(
+              selectedIcon: Icon(section.selectedIcon),
+              icon: Icon(section.icon),
+              label: section.label,
+            ),
+          if (settings.navMenu.isNotEmpty)
+            const NavigationDestination(
+              icon: Icon(Icons.menu),
+              label: 'Menu',
+            ),
         ],
       ),
-      body: <Widget>[
-        /// Notes page
-        NotesPage(),
-
-        /// Timetable and khôlles
-        EDTPage(onTimetableChanged: _syncDevoirNotifications),
-
-        /// Homework
-        DevoirsPage(draftRequest: _devoirDraftRequest),
-
-        /// Settings
-        SettingsPage(
-          settings: widget.settings,
+      body: switch (_current) {
+        AppSection.notes => const NotesPage(),
+        AppSection.planning => EDTPage(
+          onTimetableChanged: _syncDevoirNotifications,
+        ),
+        AppSection.devoirs => DevoirsPage(draftRequest: _devoirDraftRequest),
+        AppSection.settings => SettingsPage(
+          settings: settings,
           onSettingsChanged: widget.onSettingsChanged,
           dynamicColorAvailable: widget.dynamicColorAvailable,
         ),
-      ][currentPageIndex],
+      },
     );
   }
 }
