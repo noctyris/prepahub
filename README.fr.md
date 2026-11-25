@@ -11,17 +11,20 @@ Réalisée avec [Flutter](https://flutter.dev) (Dart), avec support Material You
 * Connexion au portail PRÉPA+ de ton lycée (URL personnalisable)
 * Notes affichées semaine par semaine (matière, note, professeur, classement, moyenne, écart-type)
 * Session persistante : l'application se reconnecte automatiquement au lancement (identifiants stockés localement sur l'appareil)
+* Notes mises en cache sur l'appareil et consultables hors ligne
+* Ajout local d'une note en attendant sa publication sur le portail
+* Notification optionnelle lorsqu'une actualisation détecte de nouvelles notes
 * Material You : s'adapte à la palette de ton système sur Android 12+
-* Disponible sur Android et desktop (Linux)
+* Disponible sur Android et desktop (Linux, Windows et macOS)
 
 ## Feuille de route
 
 * [ ] Intégration Pronote
 * [ ] Widgets sur l'écran d'accueil
-* [ ] Notifications à la publication d'une nouvelle note
+* [x] Notification des nouvelles notes lors d'une actualisation
 * [ ] Gestion des erreurs (identifiants invalides, pas de réseau, spinners…)
 * [ ] Builds pour plusieurs architectures de téléphone
-* [ ] Cache hors-ligne des notes
+* [x] Cache hors-ligne des notes
 * [x] Emploi du temps des khôlles hors-ligne
 * [x] Conserver les identifiants entre les lancements
 * [x] Couleurs dynamiques Material You
@@ -41,7 +44,12 @@ flutter doctor
 
 ```shell
 flutter run -d linux
+flutter run -d windows
+flutter run -d macos
 ```
+
+Les versions de publication sont construites par le workflow `Release Build`
+pour Linux, Windows et macOS.
 
 ### Android (APK)
 

@@ -11,8 +11,11 @@ Built with [Flutter](https://flutter.dev) (Dart), with Material You (Material 3)
 * Log in to your school's PRÉPA+ portal (custom portal URL supported)
 * Grades displayed week by week (subject, grade, teacher, rank, average, standard deviation)
 * Persistent session: the app logs back in automatically on launch (credentials stored locally on the device)
+* Grades cached on the device and readable offline
+* Add a grade locally until it is published on the portal
+* Optional notification when a refresh finds new grades
 * Material You: adapts to your system palette on Android 12+
-* Available on Android and desktop (Linux)
+* Available on Android, Linux, Windows and macOS
 
 ## Building
 
@@ -29,7 +32,12 @@ flutter doctor
 
 ```shell
 flutter run -d linux
+flutter run -d windows
+flutter run -d macos
 ```
+
+Release builds for Linux, Windows and macOS are produced by the
+`Release Build` workflow.
 
 ### Android (APK)
 
