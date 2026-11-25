@@ -145,8 +145,8 @@ class _Session {
       }
       if (f != null) req.bodyFields = f;
 
-      final res = await http.Response.fromStream(
-          await _client.send(req).timeout(_timeout));
+      final stream = await _client.send(req).timeout(_timeout);
+      final res = await http.Response.fromStream(stream).timeout(_timeout);
       _storeCookies(res);
 
       final loc = res.headers['location'];
@@ -197,7 +197,8 @@ Future<List<Semaine>> getNotes(
     final page = await session.get(Uri.parse(loginUrl));
     if (page.statusCode != 200) {
       throw NetworkException(
-          'Page de connexion inaccessible (${page.statusCode})');
+          "Page de connexion inaccessible (${page.statusCode}). "
+          "Vérifie l'adresse du portail.");
     }
     final csrf = parse(page.body)
             .querySelector('input[name="csrfmiddlewaretoken"]')
@@ -216,7 +217,8 @@ Future<List<Semaine>> getNotes(
       headers: {'Referer': loginUrl},
     );
     if (login.statusCode >= 400) {
-      throw NetworkException('Erreur du serveur (${login.statusCode})');
+      throw NetworkException(
+          'Erreur du serveur (${login.statusCode}). Réessaie plus tard.');
     }
     final loginDoc = parse(login.body);
     if (loginDoc.querySelector('input[name="token-otp_token"]') != null) {
@@ -229,7 +231,8 @@ Future<List<Semaine>> getNotes(
 
     final res = await session.get(Uri.parse(notesUrl));
     if (res.statusCode != 200) {
-      throw NetworkException('Erreur du serveur (${res.statusCode})');
+      throw NetworkException(
+          'Erreur du serveur (${res.statusCode}). Réessaie plus tard.');
     }
     if (parse(res.body).querySelector('input[name="auth-password"]') != null) {
       throw const AuthException('Session refusée par le serveur');
@@ -240,9 +243,12 @@ Future<List<Semaine>> getNotes(
   } on NetworkException {
     rethrow;
   } on TimeoutException {
-    throw const NetworkException('Délai dépassé, serveur injoignable');
+    throw const NetworkException(
+        'Le serveur ne répond pas. Réessaie dans un instant.');
   } catch (_) {
-    throw const NetworkException('Réseau indisponible');
+    throw const NetworkException(
+        "Impossible de joindre le portail. Vérifie ta connexion et "
+        "l'adresse saisie.");
   } finally {
     session.close();
   }

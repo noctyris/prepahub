@@ -5,7 +5,9 @@ import 'api/parse.dart';
 
 class LoginPage extends StatefulWidget {
   final ValueChanged<List<Semaine>> onSuccess;
-  const LoginPage({super.key, required this.onSuccess});
+  final String? notice;
+
+  const LoginPage({super.key, required this.onSuccess, this.notice});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -18,10 +20,12 @@ class _LoginPageState extends State<LoginPage> {
   bool busy = false;
   bool hidePassword = true;
   String? error;
+  String? _notice;
 
   @override
   void initState() {
     super.initState();
+    _notice = widget.notice;
     _loadSavedPortal();
   }
 
@@ -60,14 +64,20 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       busy = true;
       error = null;
+      _notice = null;
     });
     try {
       // On conserve le portail même si les identifiants sont refusés.
-      await savePortal(base);
+      // Un échec de sauvegarde ne doit pas empêcher la connexion.
+      try {
+        await savePortal(base);
+      } catch (_) {}
       final s = await getNotes(user, pass, portal: base);
-      await saveCreds(
-        Creds(username: user, password: pass, portal: base),
-      );
+      try {
+        await saveCreds(
+          Creds(username: user, password: pass, portal: base),
+        );
+      } catch (_) {}
       if (mounted) widget.onSuccess(s);
     } on AuthException catch (e) {
       if (mounted) setState(() => error = e.message);
@@ -179,6 +189,27 @@ class _LoginPageState extends State<LoginPage> {
                               child: Text(error!,
                                   style: tt.bodyMedium
                                       ?.copyWith(color: cs.onErrorContainer)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (_notice != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline,
+                                color: cs.onSecondaryContainer),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(_notice!,
+                                  style: tt.bodyMedium?.copyWith(
+                                      color: cs.onSecondaryContainer)),
                             ),
                           ],
                         ),

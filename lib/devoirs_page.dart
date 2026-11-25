@@ -117,10 +117,17 @@ class _DevoirsPageState extends State<DevoirsPage> {
     } catch (_) {
       devoirs = [];
     }
-    final settings = await DevoirSettingsStore.load();
+    DevoirSettings settings;
+    try {
+      settings = await DevoirSettingsStore.load();
+    } catch (_) {
+      settings = DevoirSettings.defaults;
+    }
     final matieres = await _loadMatieres();
-    final allowed = await DevoirNotifications.instance
-        .areNotificationsAllowed();
+    var allowed = true;
+    try {
+      allowed = await DevoirNotifications.instance.areNotificationsAllowed();
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _devoirs = devoirs..sort(_compareDevoirs);

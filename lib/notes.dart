@@ -23,6 +23,7 @@ class _NotesPageState extends State<NotesPage> {
   bool loading = true;
   List<Semaine>? semaines;
   String? error;
+  String? loginNotice;
 
   @override
   void initState() {
@@ -35,13 +36,13 @@ class _NotesPageState extends State<NotesPage> {
       loading = true;
       error = null;
     });
-    final creds = await loadCreds();
-    if (!mounted) return;
-    if (creds == null) {
-      setState(() => loading = false);
-      return;
-    }
     try {
+      final creds = await loadCreds();
+      if (!mounted) return;
+      if (creds == null) {
+        setState(() => loading = false);
+        return;
+      }
       final s = await getNotes(
         creds.username,
         creds.password,
@@ -50,49 +51,71 @@ class _NotesPageState extends State<NotesPage> {
       if (!mounted) return;
       setState(() {
         semaines = s;
+        loginNotice = null;
         loading = false;
       });
-    } on AuthException {
-      await clearCreds();
+    } on AuthException catch (e) {
+      await _forgetCreds();
       if (!mounted) return;
-      setState(() => loading = false);
+      setState(() {
+        loginNotice = e.message;
+        loading = false;
+      });
     } on NetworkException catch (e) {
       if (!mounted) return;
       setState(() {
         error = e.message;
         loading = false;
       });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        error = 'Une erreur inattendue est survenue';
+        loading = false;
+      });
     }
   }
 
-  Future<void> _refresh() async {
-    final creds = await loadCreds();
-    if (creds == null) {
-      await _logout();
-      return;
-    }
+  Future<void> _forgetCreds() async {
     try {
+      await clearCreds();
+    } catch (_) {}
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final creds = await loadCreds();
+      if (creds == null) {
+        await _logout();
+        return;
+      }
       final s = await getNotes(
         creds.username,
         creds.password,
         portal: creds.portal,
       );
       if (mounted) setState(() => semaines = s);
-    } on AuthException {
-      await _logout();
+    } on AuthException catch (e) {
+      await _logout(notice: e.message);
     } on NetworkException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Actualisation impossible')),
+      );
     }
   }
 
-  Future<void> _logout() async {
-    await clearCreds();
+  Future<void> _logout({String? notice}) async {
+    await _forgetCreds();
     if (!mounted) return;
     setState(() {
       semaines = null;
       error = null;
+      loginNotice = notice;
       loading = false;
     });
   }
@@ -147,7 +170,13 @@ class _NotesPageState extends State<NotesPage> {
     if (error != null) {
         return _ErrorView(message: error!, onRetry: _autoLogin, onLogout: _logout);
     }
-    return LoginPage(onSuccess: (s) => setState(() => semaines = s));
+    return LoginPage(
+      notice: loginNotice,
+      onSuccess: (s) => setState(() {
+        semaines = s;
+        loginNotice = null;
+      }),
+    );
   }
 }
 
