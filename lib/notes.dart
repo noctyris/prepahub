@@ -122,11 +122,7 @@ class _NotesPageState extends State<NotesPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+    if (loading) return const _NotesSkeleton();
     if (semaines != null) {
         return Scaffold(
           body: RefreshIndicator(
@@ -183,6 +179,133 @@ class _NotesPageState extends State<NotesPage> {
         semaines = s;
         loginNotice = null;
       }),
+    );
+  }
+}
+
+class _NotesSkeleton extends StatefulWidget {
+  const _NotesSkeleton();
+
+  @override
+  State<_NotesSkeleton> createState() => _NotesSkeletonState();
+}
+
+class _NotesSkeletonState extends State<_NotesSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final opacity = 0.35 + 0.35 * _controller.value;
+          Widget block(double height, {double? width, double radius = 8}) {
+            return Container(
+              width: width,
+              height: height,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: opacity),
+                borderRadius: BorderRadius.circular(radius),
+              ),
+            );
+          }
+
+          return CustomScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            slivers: [
+              const SliverAppBar.large(title: Text('Mes notes')),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Card.filled(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              block(18, width: 90),
+                              const Spacer(),
+                              block(18, width: 110),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          block(12, width: 140),
+                          const SizedBox(height: 10),
+                          block(96, radius: 12),
+                          const SizedBox(height: 16),
+                          block(12, width: 160),
+                          const SizedBox(height: 10),
+                          block(116, radius: 12),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                sliver: SliverList.separated(
+                  itemCount: 3,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) => Card.filled(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              block(16, width: 96),
+                              const Spacer(),
+                              block(16, width: 40),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          block(12, width: 180),
+                          if (i == 0) ...[
+                            const SizedBox(height: 14),
+                            block(1),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(child: block(34, radius: 12)),
+                                const SizedBox(width: 12),
+                                block(34, width: 52, radius: 12),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
