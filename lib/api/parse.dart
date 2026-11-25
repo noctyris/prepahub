@@ -7,20 +7,58 @@ class Rang {
 }
 
 class Note {
+  final String? id;
   final String matiere;
   final double? note;
   final String professeur;
   final Rang rang;
   final double? moyenne;
   final double? ecartType;
+  final bool local;
   Note({
+    this.id,
     required this.matiere,
     this.note,
     required this.professeur,
     required this.rang,
     this.moyenne,
     this.ecartType,
+    this.local = false,
   });
+
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'matiere': matiere,
+    'note': note,
+    'professeur': professeur,
+    'rang': rang.rang,
+    'rangTotal': rang.total,
+    'moyenne': moyenne,
+    'ecartType': ecartType,
+    if (local) 'local': true,
+  };
+
+  factory Note.fromJson(Map<String, dynamic> json) {
+    double? asDouble(Object? value) => value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+    int? asInt(Object? value) => value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '');
+    return Note(
+      id: json['id']?.toString(),
+      matiere: json['matiere']?.toString() ?? '',
+      note: asDouble(json['note']),
+      professeur: json['professeur']?.toString() ?? '',
+      rang: Rang(
+        rang: asInt(json['rang']),
+        total: asInt(json['rangTotal']),
+      ),
+      moyenne: asDouble(json['moyenne']),
+      ecartType: asDouble(json['ecartType']),
+      local: json['local'] == true,
+    );
+  }
 }
 
 class Semaine {
@@ -34,6 +72,25 @@ class Semaine {
     required this.fin,
     required this.notes,
   });
+
+  Map<String, dynamic> toJson() => {
+    'numero': numero,
+    'debut': debut,
+    'fin': fin,
+    'notes': [for (final note in notes) note.toJson()],
+  };
+
+  factory Semaine.fromJson(Map<String, dynamic> json) => Semaine(
+    numero: json['numero'] is num
+        ? (json['numero'] as num).toInt()
+        : int.tryParse(json['numero']?.toString() ?? ''),
+    debut: json['debut']?.toString() ?? '',
+    fin: json['fin']?.toString() ?? '',
+    notes: [
+      for (final item in (json['notes'] as List? ?? const []))
+        if (item is Map) Note.fromJson(Map<String, dynamic>.from(item)),
+    ],
+  );
 }
 
 class SemaineColles {

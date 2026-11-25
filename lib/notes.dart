@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'app_settings.dart';
 import 'api/client.dart';
 import 'api/parse.dart';
+import 'devoirs_notifications.dart';
 import 'login.dart';
+import 'notes_store.dart';
 
 String _fmt(double? v) {
   if (v == null) return '—';
@@ -34,8 +38,13 @@ Color _noteColor(Note note, ColorScheme cs) {
 
 class NotesPage extends StatefulWidget {
   final NotesLayout layout;
+  final bool notifyNewGrades;
 
-  const NotesPage({super.key, this.layout = NotesLayout.cards});
+  const NotesPage({
+    super.key,
+    this.layout = NotesLayout.cards,
+    this.notifyNewGrades = true,
+  });
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -43,7 +52,12 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   bool loading = true;
+  bool _offline = false;
+  bool _duplicateDialogOpen = false;
+  DateTime? _cacheDate;
   List<Semaine>? semaines;
+  List<Note> _localNotes = [];
+  final Set<String> _ignoredDuplicates = {};
   String? error;
   String? loginNotice;
 
@@ -65,36 +79,188 @@ class _NotesPageState extends State<NotesPage> {
         setState(() => loading = false);
         return;
       }
-      final s = await getNotes(
-        creds.username,
-        creds.password,
-        portal: creds.portal,
-      );
+
+      await NotesStore.setUser(creds.username);
+      final cached = await NotesStore.loadCache();
+      final cacheDate = await NotesStore.loadCacheDate();
+      final local = await NotesStore.loadLocalNotes();
       if (!mounted) return;
-      setState(() {
-        semaines = s;
-        loginNotice = null;
-        loading = false;
-      });
-    } on AuthException catch (e) {
-      await _forgetCreds();
-      if (!mounted) return;
-      setState(() {
-        loginNotice = e.message;
-        loading = false;
-      });
-    } on NetworkException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        error = e.message;
-        loading = false;
-      });
+      if (cached.isNotEmpty || local.isNotEmpty) {
+        setState(() {
+          semaines = cached;
+          _localNotes = local;
+          _cacheDate = cacheDate;
+          _offline = cached.isNotEmpty;
+          loading = false;
+        });
+      }
+
+      try {
+        final s = await getNotes(
+          creds.username,
+          creds.password,
+          portal: creds.portal,
+        );
+        if (!mounted) return;
+        setState(() {
+          semaines = s;
+          loginNotice = null;
+          loading = false;
+          _offline = false;
+        });
+        unawaited(_afterFetch(s));
+      } on AuthException catch (e) {
+        await _forgetCreds();
+        if (!mounted) return;
+        setState(() {
+          loginNotice = e.message;
+          semaines = null;
+          loading = false;
+          _offline = false;
+        });
+      } on NetworkException catch (e) {
+        if (!mounted) return;
+        if (cached.isNotEmpty || local.isNotEmpty) {
+          setState(() {
+            loading = false;
+            _offline = true;
+            error = null;
+          });
+        } else {
+          setState(() {
+            error = e.message;
+            loading = false;
+          });
+        }
+      } catch (_) {
+        if (!mounted) return;
+        if (cached.isNotEmpty || local.isNotEmpty) {
+          setState(() {
+            loading = false;
+            _offline = true;
+            error = null;
+          });
+        } else {
+          setState(() {
+            error = 'Une erreur inattendue est survenue';
+            loading = false;
+          });
+        }
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         error = 'Une erreur inattendue est survenue';
         loading = false;
       });
+    }
+  }
+
+  Future<void> _onLoginSuccess(List<Semaine> s) async {
+    final creds = await loadCreds();
+    if (creds != null) await NotesStore.setUser(creds.username);
+    final local = await NotesStore.loadLocalNotes();
+    if (!mounted) return;
+    setState(() {
+      semaines = s;
+      _localNotes = local;
+      loginNotice = null;
+      _offline = false;
+    });
+    unawaited(_afterFetch(s));
+  }
+
+  Future<void> _afterFetch(List<Semaine> s) async {
+    await NotesStore.saveCache(s);
+    final date = await NotesStore.loadCacheDate();
+    if (mounted) setState(() => _cacheDate = date);
+    await _notifyNewGrades(s);
+    if (!mounted) return;
+    await _resolveLocalDuplicates(s);
+  }
+
+  Future<void> _notifyNewGrades(List<Semaine> s) async {
+    final current = NotesStore.signatures(s);
+    final previous = await NotesStore.loadSeenSignatures();
+    await NotesStore.saveSeenSignatures(current);
+    if (!widget.notifyNewGrades || previous == null) return;
+    final count = current.difference(previous).length;
+    if (count == 0) return;
+    await DevoirNotifications.instance.notifyNewGrades(count);
+  }
+
+  bool _similar(Note local, Note online) {
+    if (online.local || local.note == null || online.note == null) return false;
+    final sameSubject =
+        local.matiere.trim().toLowerCase() ==
+        online.matiere.trim().toLowerCase();
+    return sameSubject && (local.note! - online.note!).abs() < 0.01;
+  }
+
+  Future<void> _resolveLocalDuplicates(List<Semaine> s) async {
+    if (_localNotes.isEmpty || _duplicateDialogOpen || !mounted) return;
+    final matches = [
+      for (final local in _localNotes)
+        if (local.id != null && !_ignoredDuplicates.contains(local.id))
+          if (s.any(
+            (semaine) =>
+                semaine.notes.any((note) => _similar(local, note)),
+          ))
+            local,
+    ];
+    if (matches.isEmpty || !mounted) return;
+    _duplicateDialogOpen = true;
+    final remove = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Notes en ligne'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ces notes ajoutées localement ressemblent à des notes '
+                'maintenant disponibles sur le portail :',
+              ),
+              const SizedBox(height: 12),
+              for (final note in matches)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('• ${note.matiere} : ${_fmt(note.note)}'),
+                ),
+              const SizedBox(height: 4),
+              const Text('Les supprimer de la liste locale ?'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Garder'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    _duplicateDialogOpen = false;
+    if (!mounted) return;
+    if (remove == true) {
+      final ids = {for (final note in matches) note.id};
+      final next = [
+        for (final note in _localNotes)
+          if (!ids.contains(note.id)) note,
+      ];
+      setState(() => _localNotes = next);
+      await NotesStore.saveLocalNotes(next);
+    } else {
+      _ignoredDuplicates.addAll([
+        for (final note in matches)
+          if (note.id != null) note.id!,
+      ]);
     }
   }
 
@@ -111,16 +277,24 @@ class _NotesPageState extends State<NotesPage> {
         await _logout();
         return;
       }
+      await NotesStore.setUser(creds.username);
       final s = await getNotes(
         creds.username,
         creds.password,
         portal: creds.portal,
       );
-      if (mounted) setState(() => semaines = s);
+      if (!mounted) return;
+      setState(() {
+        semaines = s;
+        _offline = false;
+        error = null;
+      });
+      unawaited(_afterFetch(s));
     } on AuthException catch (e) {
       await _logout(notice: e.message);
     } on NetworkException catch (e) {
       if (!mounted) return;
+      if (semaines != null) setState(() => _offline = true);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
@@ -131,11 +305,34 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
+  Future<void> _addLocalNote() async {
+    final note = await showDialog<Note>(
+      context: context,
+      builder: (_) => const _LocalNoteDialog(),
+    );
+    if (note == null || !mounted) return;
+    final next = [..._localNotes, note];
+    setState(() => _localNotes = next);
+    await NotesStore.saveLocalNotes(next);
+  }
+
+  Future<void> _deleteLocalNote(Note note) async {
+    final next = [
+      for (final item in _localNotes)
+        if (item.id != note.id) item,
+    ];
+    setState(() => _localNotes = next);
+    await NotesStore.saveLocalNotes(next);
+  }
+
   Future<void> _logout({String? notice}) async {
     await _forgetCreds();
     if (!mounted) return;
     setState(() {
       semaines = null;
+      _localNotes = [];
+      _offline = false;
+      _cacheDate = null;
       error = null;
       loginNotice = notice;
       loading = false;
@@ -143,6 +340,7 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   List<Widget> _weekSlivers(List<Semaine> semaines) {
+    if (semaines.isEmpty) return const [];
     switch (widget.layout) {
       case NotesLayout.cards:
         return [
@@ -258,50 +456,307 @@ class _NotesPageState extends State<NotesPage> {
   Widget build(BuildContext context) {
     if (loading) return const _NotesSkeleton();
     if (semaines != null) {
-        return Scaffold(
-          body: RefreshIndicator(
-            onRefresh: _refresh,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverAppBar.large(
-                  title: const Text('Mes notes'),
-                  actions: [
-                    IconButton(
-                      tooltip: 'Se déconnecter',
-                      icon: const Icon(Icons.logout),
-                      onPressed: _logout,
-                    ),
-                  ],
+      final weeks = semaines!;
+      return Scaffold(
+        body: RefreshIndicator(
+          onRefresh: _refresh,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverAppBar.large(
+                title: const Text('Mes notes'),
+                actions: [
+                  IconButton(
+                    tooltip: 'Ajouter une note locale',
+                    icon: const Icon(Icons.add_chart_outlined),
+                    onPressed: _addLocalNote,
+                  ),
+                  IconButton(
+                    tooltip: 'Se déconnecter',
+                    icon: const Icon(Icons.logout),
+                    onPressed: _logout,
+                  ),
+                ],
+              ),
+              if (_offline)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: _OfflineBanner(cacheDate: _cacheDate),
+                  ),
                 ),
-                if (semaines != null && semaines!.isNotEmpty)
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    sliver: SliverToBoxAdapter(
-                      child: _NotesOverview(semaines: semaines!),
+              if (weeks.isNotEmpty || _localNotes.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: _NotesOverview(
+                      semaines: weeks,
+                      extraNotes: _localNotes,
                     ),
                   ),
-                if (semaines == null || semaines?.isEmpty == true)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: Text('Aucune note pour le moment')),
-                  )
-                else
-                  ..._weekSlivers(semaines!),
-              ],
-            ),
+                ),
+              if (_localNotes.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: _LocalNotesCard(
+                      notes: _localNotes,
+                      onDelete: (note) => unawaited(_deleteLocalNote(note)),
+                    ),
+                  ),
+                ),
+              if (weeks.isEmpty && _localNotes.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('Aucune note pour le moment')),
+                )
+              else if (weeks.isNotEmpty)
+                ..._weekSlivers(weeks)
+              else
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
           ),
-        );
+        ),
+      );
     }
     if (error != null) {
-        return _ErrorView(message: error!, onRetry: _autoLogin, onLogout: _logout);
+      return _ErrorView(
+        message: error!,
+        onRetry: _autoLogin,
+        onLogout: _logout,
+      );
     }
     return LoginPage(
       notice: loginNotice,
-      onSuccess: (s) => setState(() {
-        semaines = s;
-        loginNotice = null;
-      }),
+      onSuccess: (s) => unawaited(_onLoginSuccess(s)),
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  final DateTime? cacheDate;
+
+  const _OfflineBanner({this.cacheDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final date = cacheDate;
+    final stamp = date == null
+        ? 'Notes enregistrées sur cet appareil.'
+        : 'Notes enregistrées le '
+              '${date.day.toString().padLeft(2, '0')}/'
+              '${date.month.toString().padLeft(2, '0')} à '
+              '${date.hour.toString().padLeft(2, '0')}h'
+              '${date.minute.toString().padLeft(2, '0')}.';
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: cs.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off_outlined, color: cs.onTertiaryContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Mode hors ligne · $stamp',
+                style: tt.bodySmall?.copyWith(color: cs.onTertiaryContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalNotesCard extends StatelessWidget {
+  final List<Note> notes;
+  final void Function(Note) onDelete;
+
+  const _LocalNotesCard({required this.notes, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.edit_note, color: cs.tertiary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Notes ajoutées localement',
+                    style: tt.titleSmall,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: cs.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'hors ligne',
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                'En attente de publication sur le portail.',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ),
+            for (final note in notes)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(note.matiere),
+                subtitle: note.professeur.isEmpty
+                    ? null
+                    : Text(note.professeur),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _fmt(note.note),
+                      style: tt.titleMedium?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Supprimer',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => onDelete(note),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalNoteDialog extends StatefulWidget {
+  const _LocalNoteDialog();
+
+  @override
+  State<_LocalNoteDialog> createState() => _LocalNoteDialogState();
+}
+
+class _LocalNoteDialogState extends State<_LocalNoteDialog> {
+  final _matiere = TextEditingController();
+  final _note = TextEditingController();
+  final _professeur = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _matiere.dispose();
+    _note.dispose();
+    _professeur.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final matiere = _matiere.text.trim();
+    final value = double.tryParse(_note.text.trim().replaceAll(',', '.'));
+    if (matiere.isEmpty) {
+      setState(() => _error = 'Indique la matière');
+      return;
+    }
+    if (value == null || value < 0 || value > 20) {
+      setState(() => _error = 'Indique une note entre 0 et 20');
+      return;
+    }
+    Navigator.pop(
+      context,
+      Note(
+        id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+        matiere: matiere,
+        note: value,
+        professeur: _professeur.text.trim(),
+        rang: Rang(),
+        local: true,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Ajouter une note'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Elle reste sur cet appareil jusqu’à sa publication sur le portail.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _matiere,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Matière',
+                border: const OutlineInputBorder(),
+                errorText: _error,
+              ),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _note,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Note sur 20',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _professeur,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Professeur (facultatif)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Ajouter')),
+      ],
     );
   }
 }
@@ -481,13 +936,19 @@ class _ErrorView extends StatelessWidget {
 
 class _NotesOverview extends StatelessWidget {
   final List<Semaine> semaines;
+  final List<Note> extraNotes;
 
-  const _NotesOverview({required this.semaines});
+  const _NotesOverview({
+    required this.semaines,
+    this.extraNotes = const [],
+  });
 
   List<double> get _allNotes => [
     for (final s in semaines)
       for (final n in s.notes)
         if (n.note != null) n.note!,
+    for (final n in extraNotes)
+      if (n.note != null) n.note!,
   ];
 
   List<({String label, double moyenne})> get _weeklyAverages {

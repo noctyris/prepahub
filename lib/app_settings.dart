@@ -73,6 +73,7 @@ class AppSettings {
   final bool dynamicColor;
   final bool amoledBlack;
   final NotesLayout notesLayout;
+  final bool notifyNewGrades;
   final List<AppSection> navBar;
   final List<AppSection> navMenu;
   final AppSection startSection;
@@ -82,6 +83,7 @@ class AppSettings {
     required this.dynamicColor,
     required this.amoledBlack,
     this.notesLayout = NotesLayout.cards,
+    this.notifyNewGrades = true,
     this.navBar = const [
       AppSection.notes,
       AppSection.planning,
@@ -111,6 +113,7 @@ class AppSettings {
     bool? dynamicColor,
     bool? amoledBlack,
     NotesLayout? notesLayout,
+    bool? notifyNewGrades,
     List<AppSection>? navBar,
     List<AppSection>? navMenu,
     AppSection? startSection,
@@ -119,6 +122,7 @@ class AppSettings {
     dynamicColor: dynamicColor ?? this.dynamicColor,
     amoledBlack: amoledBlack ?? this.amoledBlack,
     notesLayout: notesLayout ?? this.notesLayout,
+    notifyNewGrades: notifyNewGrades ?? this.notifyNewGrades,
     navBar: navBar ?? this.navBar,
     navMenu: navMenu ?? this.navMenu,
     startSection: startSection ?? this.startSection,
@@ -155,6 +159,7 @@ class AppSettings {
       dynamicColor: dynamicColor,
       amoledBlack: amoledBlack,
       notesLayout: notesLayout,
+      notifyNewGrades: notifyNewGrades,
       navBar: List.unmodifiable(bar),
       navMenu: List.unmodifiable(menu),
       startSection: start,
@@ -167,6 +172,7 @@ class AppSettingsStore {
   static const _dynamicColorKey = 'app_dynamic_color';
   static const _amoledBlackKey = 'app_amoled_black';
   static const _notesLayoutKey = 'app_notes_layout';
+  static const _notifyNewGradesKey = 'app_notify_new_grades';
   static const _navBarKey = 'app_nav_bar';
   static const _navMenuKey = 'app_nav_menu';
   static const _startSectionKey = 'app_start_section';
@@ -182,6 +188,9 @@ class AppSettingsStore {
         amoledBlack:
             prefs.getBool(_amoledBlackKey) ?? AppSettings.defaults.amoledBlack,
         notesLayout: _notesLayoutFrom(prefs.getString(_notesLayoutKey)),
+        notifyNewGrades:
+            prefs.getBool(_notifyNewGradesKey) ??
+            AppSettings.defaults.notifyNewGrades,
         navBar:
             _sectionsFrom(prefs.getStringList(_navBarKey)) ??
             AppSettings.defaults.navBar,
@@ -203,6 +212,7 @@ class AppSettingsStore {
     await prefs.setBool(_dynamicColorKey, settings.dynamicColor);
     await prefs.setBool(_amoledBlackKey, settings.amoledBlack);
     await prefs.setString(_notesLayoutKey, settings.notesLayout.name);
+    await prefs.setBool(_notifyNewGradesKey, settings.notifyNewGrades);
     await prefs.setStringList(_navBarKey, [
       for (final section in settings.navBar) section.name,
     ]);

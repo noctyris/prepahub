@@ -29,6 +29,7 @@ class DevoirNotifications {
 
   static const _eveningBaseId = 41000;
   static const _courseBaseId = 42000;
+  static const _gradesId = 43000;
   static const _maxCourseNotifications = 40;
   static const _eveningDays = 14;
 
@@ -172,6 +173,27 @@ class DevoirNotifications {
       }
     } catch (_) {}
     return false;
+  }
+
+  /// Prévient qu'une ou plusieurs notes viennent d'être détectées. Il s'agit
+  /// d'une notification immédiate, affichée pendant que l'application est
+  /// ouverte : aucun rafraîchissement n'a lieu en arrière-plan.
+  Future<void> notifyNewGrades(int count) async {
+    if (count <= 0) return;
+    if (!isSupported) return;
+    await initialize();
+    if (!await areNotificationsAllowed()) return;
+    try {
+      await _plugin.show(
+        id: _gradesId,
+        title: 'Nouvelles notes',
+        body: count == 1
+            ? 'Une nouvelle note vient d’être publiée.'
+            : '$count nouvelles notes viennent d’être publiées.',
+        notificationDetails: _gradesDetails,
+        payload: 'notes:nouvelles',
+      );
+    } catch (_) {}
   }
 
   /// Resynchronise les rappels. Les appels sont sérialisés pour éviter que
@@ -358,6 +380,19 @@ class DevoirNotifications {
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  static const NotificationDetails _gradesDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'nouvelles_notes',
+      'Nouvelles notes',
+      icon: 'ic_stat_devoirs',
+      channelDescription: 'Prévenir quand une nouvelle note est publiée',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    ),
+    iOS: DarwinNotificationDetails(),
+    macOS: DarwinNotificationDetails(),
+  );
 
   static const NotificationDetails _notificationDetails = NotificationDetails(
     android: AndroidNotificationDetails(

@@ -250,7 +250,10 @@ class _RootPageState extends State<RootPage> {
         ],
       ),
       body: switch (_current) {
-        AppSection.notes => NotesPage(layout: settings.notesLayout),
+        AppSection.notes => NotesPage(
+          layout: settings.notesLayout,
+          notifyNewGrades: settings.notifyNewGrades,
+        ),
         AppSection.planning => EDTPage(
           onTimetableChanged: _syncDevoirNotifications,
         ),

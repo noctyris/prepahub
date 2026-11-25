@@ -135,6 +135,14 @@ class _SettingsPageState extends State<SettingsPage> {
     await _update(settings.copyWith(startSection: picked));
   }
 
+  Future<void> _toggleGradeNotifications(bool value) async {
+    await _update(widget.settings.copyWith(notifyNewGrades: value));
+    if (!value || _notificationsAllowed) return;
+    final granted = await DevoirNotifications.instance.requestPermission();
+    if (!mounted) return;
+    setState(() => _notificationsAllowed = granted);
+  }
+
   Future<void> _chooseNotesLayout() async {
     final settings = widget.settings;
     final picked = await showDialog<NotesLayout>(
@@ -292,15 +300,30 @@ class _SettingsPageState extends State<SettingsPage> {
           Card.filled(
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
-            child: ListTile(
-              leading: Icon(settings.notesLayout.icon),
-              title: const Text('Disposition des notes'),
-              subtitle: Text(
-                '${settings.notesLayout.label} · '
-                '${settings.notesLayout.description}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _chooseNotesLayout,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(settings.notesLayout.icon),
+                  title: const Text('Disposition des notes'),
+                  subtitle: Text(
+                    '${settings.notesLayout.label} · '
+                    '${settings.notesLayout.description}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseNotesLayout,
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.notifications_active_outlined),
+                  title: const Text('Nouvelles notes'),
+                  subtitle: const Text(
+                    'Prévenir lors d’une actualisation quand une note apparaît.',
+                  ),
+                  value: settings.notifyNewGrades,
+                  onChanged: (value) =>
+                      unawaited(_toggleGradeNotifications(value)),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),

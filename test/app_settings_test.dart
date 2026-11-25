@@ -17,6 +17,7 @@ void main() {
     expect(settings.dynamicColor, isTrue);
     expect(settings.amoledBlack, isFalse);
     expect(settings.notesLayout, NotesLayout.cards);
+    expect(settings.notifyNewGrades, isTrue);
   });
 
   test('conserve les réglages enregistrés', () async {
@@ -25,6 +26,7 @@ void main() {
       dynamicColor: false,
       amoledBlack: true,
       notesLayout: NotesLayout.grid,
+      notifyNewGrades: false,
     );
 
     await AppSettingsStore.save(settings);
@@ -34,5 +36,6 @@ void main() {
     expect(loaded.dynamicColor, isFalse);
     expect(loaded.amoledBlack, isTrue);
     expect(loaded.notesLayout, NotesLayout.grid);
+    expect(loaded.notifyNewGrades, isFalse);
   });
 }
