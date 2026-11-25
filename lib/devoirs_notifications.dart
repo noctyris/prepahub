@@ -363,6 +363,7 @@ class DevoirNotifications {
     android: AndroidNotificationDetails(
       'devoirs_rappels',
       'Devoirs et fins de cours',
+      icon: 'ic_stat_devoirs',
       channelDescription: 'Rappels des devoirs du lendemain et fins de cours',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,

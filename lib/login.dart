@@ -108,7 +108,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text('PrepaHub',
+                    Text('PrépaHub',
                         textAlign: TextAlign.center, style: tt.headlineMedium),
                     const SizedBox(height: 4),
                     Text('Connecte-toi avec le compte de ton lycée',

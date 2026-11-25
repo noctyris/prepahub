@@ -35,7 +35,7 @@ class PrepaHubApp extends StatelessWidget {
             darkDynamic?.harmonized() ??
             ColorScheme.fromSeed(seedColor: _seed, brightness: Brightness.dark);
         return MaterialApp(
-          title: 'PrepaHub',
+          title: 'PrépaHub',
           debugShowCheckedModeBanner: false,
           theme: ThemeData(colorScheme: light, useMaterial3: true),
           darkTheme: ThemeData(colorScheme: dark, useMaterial3: true),

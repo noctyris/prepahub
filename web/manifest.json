@@ -1,6 +1,6 @@
 {
-    "name": "prepahub",
-    "short_name": "prepahub",
+    "name": "PrépaHub",
+    "short_name": "PrépaHub",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
