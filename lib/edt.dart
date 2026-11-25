@@ -192,7 +192,7 @@ class _EDTPageState extends State<EDTPage> {
   double _dragDx = 0;
   Map<String, int> _subjectSeeds = const {};
 
-  static const double _dayHourHeight = 76;
+  Timer? _clock;
 
   static int _defaultSemestre(DateTime d) =>
       d.month >= 8 || d.month == 1 ? 1 : 2;
@@ -222,6 +222,15 @@ class _EDTPageState extends State<EDTPage> {
     _selectedDay = DateTime(now.year, now.month, now.day);
     super.initState();
     _load();
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -607,27 +616,11 @@ class _EDTPageState extends State<EDTPage> {
         if (e.day == _selectedDay.weekday) e,
     ];
     if (events.isEmpty) return _emptyAgenda(week: false);
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: events.length,
-      itemBuilder: (context, i) {
-        final event = events[i];
-        final height = math.max(
-          _dayHourHeight,
-          (event.end - event.start) / 60 * _dayHourHeight,
-        );
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: SizedBox(
-            height: height,
-            child: _EventCard(
-              event: event,
-              colorSeed: event.isKholle ? null : _seedFor(event.matiere),
-              onTap: () => _showEvent(event),
-            ),
-          ),
-        );
-      },
+    return _DayTimeline(
+      date: _selectedDay,
+      events: events,
+      subjectSeeds: _subjectSeeds,
+      onTap: _showEvent,
     );
   }
 
@@ -743,93 +736,42 @@ class _EdtEvent {
   String get endLabel => _displayMinutes(end);
 }
 
-class _EventCard extends StatelessWidget {
-  final _EdtEvent event;
-  final int? colorSeed;
-  final VoidCallback onTap;
+Map<_EdtEvent, ({int lane, int count})> _layoutLanes(
+  List<_EdtEvent> sorted,
+) {
+  final result = <_EdtEvent, ({int lane, int count})>{};
+  var cluster = <_EdtEvent>[];
+  var clusterEnd = 0;
 
-  const _EventCard({
-    required this.event,
-    required this.colorSeed,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final isKholle = event.isKholle;
-    final palette = !isKholle && colorSeed != null
-        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
-        : null;
-    final background = isKholle
-        ? cs.tertiaryContainer
-        : (palette?.background ?? cs.secondaryContainer);
-    final foreground = isKholle
-        ? cs.onTertiaryContainer
-        : (palette?.foreground ?? cs.onSecondaryContainer);
-    final details = [
-      if (event.salle.isNotEmpty) 'Salle ${event.salle}',
-      if (event.prof.isNotEmpty) event.prof,
-    ].join(' · ');
-    final badge = isKholle
-        ? 'Khôlle'
-        : (event.cours == null ? null : _recurrenceBadge(event.cours!));
-
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      color: background,
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        onTap: onTap,
-        textColor: foreground,
-        iconColor: foreground,
-        leading: _TimeBadge(
-          start: event.startLabel,
-          end: isKholle ? null : event.endLabel,
-          background: foreground.withValues(alpha: 0.12),
-          foreground: foreground,
-        ),
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                event.matiere,
-                overflow: TextOverflow.ellipsis,
-                style: tt.titleMedium?.copyWith(color: foreground),
-              ),
-            ),
-            if (badge != null) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  badge,
-                  style: tt.labelSmall?.copyWith(color: foreground),
-                ),
-              ),
-            ],
-          ],
-        ),
-        subtitle: details.isEmpty
-            ? null
-            : Text(
-                details,
-                style: tt.bodyMedium?.copyWith(
-                  color: foreground.withValues(alpha: 0.78),
-                ),
-              ),
-        trailing: Icon(
-          Icons.chevron_right,
-          color: foreground.withValues(alpha: 0.78),
-        ),
-      ),
-    );
+  void closeCluster() {
+    if (cluster.isEmpty) return;
+    final laneEnds = <int>[];
+    final lanes = <_EdtEvent, int>{};
+    for (final event in cluster) {
+      var lane = laneEnds.indexWhere((end) => end <= event.start);
+      if (lane == -1) {
+        lane = laneEnds.length;
+        laneEnds.add(event.end);
+      } else {
+        laneEnds[lane] = event.end;
+      }
+      lanes[event] = lane;
+    }
+    final count = laneEnds.isEmpty ? 1 : laneEnds.length;
+    for (final event in cluster) {
+      result[event] = (lane: lanes[event] ?? 0, count: count);
+    }
+    cluster = <_EdtEvent>[];
+    clusterEnd = 0;
   }
+
+  for (final event in sorted) {
+    if (cluster.isNotEmpty && event.start >= clusterEnd) closeCluster();
+    cluster.add(event);
+    if (event.end > clusterEnd) clusterEnd = event.end;
+  }
+  closeCluster();
+  return result;
 }
 
 class _WeekGrid extends StatelessWidget {
@@ -859,13 +801,35 @@ class _WeekGrid extends StatelessWidget {
       if (e.start < startMinute) startMinute = e.start;
       if (e.end > endMinute) endMinute = e.end;
     }
-    final startHour = startMinute ~/ 60;
+    final now = DateTime.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+    var startHour = startMinute ~/ 60;
     var endHour = (endMinute + 59) ~/ 60;
+    var todayColumn = -1;
+    for (var jour = 1; jour <= dayCount; jour++) {
+      if (_sameDay(
+        DateTime(monday.year, monday.month, monday.day + jour - 1),
+        now,
+      )) {
+        todayColumn = jour - 1;
+        break;
+      }
+    }
+    if (todayColumn >= 0) {
+      if (nowMinutes < startHour * 60) startHour = nowMinutes ~/ 60;
+      if (nowMinutes > endHour * 60) endHour = (nowMinutes + 59) ~/ 60;
+    }
     if (endHour <= startHour) endHour = startHour + 1;
     if (endHour > 24) endHour = 24;
     final totalHeight = (endHour - startHour) * _hourHeight;
     final gridHeight = totalHeight + 8;
-    final now = DateTime.now();
+    final nowTop = todayColumn >= 0 &&
+            nowMinutes >= startHour * 60 &&
+            nowMinutes <= endHour * 60
+        ? ((nowMinutes - startHour * 60) / 60 * _hourHeight - 7)
+              .clamp(0.0, gridHeight - 14)
+              .toDouble()
+        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -954,6 +918,15 @@ class _WeekGrid extends StatelessWidget {
                               ),
                           ],
                         ),
+                        if (nowTop != null)
+                          Positioned(
+                            top: nowTop,
+                            left:
+                                _gutterWidth + todayColumn * dayWidth,
+                            width: dayWidth,
+                            height: 14,
+                            child: _NowLine(color: cs.error),
+                          ),
                       ],
                     ),
                   ),
@@ -1074,38 +1047,7 @@ class _DayColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final sorted = [...events]..sort((a, b) => a.start.compareTo(b.start));
-    final lanes = <_EdtEvent, int>{};
-    final laneCounts = <_EdtEvent, int>{};
-    var cluster = <_EdtEvent>[];
-    var clusterEnd = 0;
-
-    void closeCluster() {
-      final laneEnds = <int>[];
-      for (final e in cluster) {
-        var lane = laneEnds.indexWhere((end) => end <= e.start);
-        if (lane == -1) {
-          lane = laneEnds.length;
-          laneEnds.add(e.end);
-        } else {
-          laneEnds[lane] = e.end;
-        }
-        lanes[e] = lane;
-      }
-      final count = laneEnds.isEmpty ? 1 : laneEnds.length;
-      for (final e in cluster) {
-        laneCounts[e] = count;
-      }
-    }
-
-    for (final e in sorted) {
-      if (cluster.isNotEmpty && e.start >= clusterEnd) {
-        closeCluster();
-        cluster = [];
-      }
-      cluster.add(e);
-      if (e.end > clusterEnd) clusterEnd = e.end;
-    }
-    if (cluster.isNotEmpty) closeCluster();
+    final layout = _layoutLanes(sorted);
 
     return Container(
       decoration: BoxDecoration(
@@ -1117,7 +1059,12 @@ class _DayColumn extends StatelessWidget {
       child: Stack(
         children: [
           for (final e in sorted)
-            _buildBlock(context, e, lanes[e] ?? 0, laneCounts[e] ?? 1),
+            _buildBlock(
+              context,
+              e,
+              layout[e]?.lane ?? 0,
+              layout[e]?.count ?? 1,
+            ),
         ],
       ),
     );
@@ -1236,6 +1183,307 @@ class _WeekEventBlock extends StatelessWidget {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DayTimeline extends StatelessWidget {
+  final DateTime date;
+  final List<_EdtEvent> events;
+  final Map<String, int> subjectSeeds;
+  final ValueChanged<_EdtEvent> onTap;
+
+  const _DayTimeline({
+    required this.date,
+    required this.events,
+    required this.subjectSeeds,
+    required this.onTap,
+  });
+
+  static const double _hourHeight = 68;
+  static const double _gutterWidth = 44;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    final isToday = _sameDay(date, now);
+    final nowMinutes = now.hour * 60 + now.minute;
+    var startMinute = 8 * 60;
+    var endMinute = 18 * 60;
+    for (final event in events) {
+      if (event.start < startMinute) startMinute = event.start;
+      if (event.end > endMinute) endMinute = event.end;
+    }
+    if (isToday) {
+      if (nowMinutes < startMinute) startMinute = nowMinutes ~/ 60 * 60;
+      if (nowMinutes > endMinute) endMinute = (nowMinutes + 59) ~/ 60 * 60;
+    }
+    var startHour = startMinute ~/ 60;
+    if (startHour < 0) startHour = 0;
+    var endHour = (endMinute + 59) ~/ 60;
+    if (endHour <= startHour) endHour = startHour + 1;
+    if (endHour > 24) endHour = 24;
+    final gridHeight = (endHour - startHour) * _hourHeight + 8;
+    final scale = _hourHeight / 60;
+    final sorted = [...events]..sort((a, b) => a.start.compareTo(b.start));
+    final layout = _layoutLanes(sorted);
+    final nowTop = isToday &&
+            nowMinutes >= startHour * 60 &&
+            nowMinutes <= endHour * 60
+        ? ((nowMinutes - startHour * 60) * scale - 7)
+              .clamp(0.0, gridHeight - 14)
+              .toDouble()
+        : null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+      child: SizedBox(
+        height: gridHeight,
+        child: Stack(
+          children: [
+            for (var h = startHour; h <= endHour; h++)
+              Positioned(
+                top: (h - startHour) * _hourHeight,
+                left: _gutterWidth,
+                right: 0,
+                child: Container(
+                  height: 1,
+                  color: cs.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+            _TimeGutter(
+              width: _gutterWidth,
+              height: gridHeight,
+              startHour: startHour,
+              endHour: endHour,
+              hourHeight: _hourHeight,
+            ),
+            for (final event in sorted)
+              Positioned(
+                top: (event.start - startHour * 60) * scale,
+                left: _gutterWidth + 1,
+                right: 1,
+                height: math.max(34.0, (event.end - event.start) * scale - 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (
+                      var lane = 0;
+                      lane < (layout[event]?.count ?? 1);
+                      lane++
+                    )
+                      Expanded(
+                        child: lane == (layout[event]?.lane ?? 0)
+                            ? Padding(
+                                padding: const EdgeInsets.only(left: 2),
+                                child: _DayEventBlock(
+                                  event: event,
+                                  colorSeed: event.isKholle
+                                      ? null
+                                      : subjectSeeds[_subjectKey(
+                                          event.matiere,
+                                        )],
+                                  onTap: () => onTap(event),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                  ],
+                ),
+              ),
+            if (nowTop != null)
+              Positioned(
+                top: nowTop,
+                left: 0,
+                right: 0,
+                height: 14,
+                child: _NowLine(
+                  color: cs.error,
+                  gutterWidth: _gutterWidth,
+                  label: _displayMinutes(nowMinutes),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DayEventBlock extends StatelessWidget {
+  final _EdtEvent event;
+  final int? colorSeed;
+  final VoidCallback onTap;
+
+  const _DayEventBlock({
+    required this.event,
+    required this.colorSeed,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final isKholle = event.isKholle;
+    final palette = !isKholle && colorSeed != null
+        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        : null;
+    final background = isKholle
+        ? cs.tertiaryContainer
+        : (palette?.background ?? cs.secondaryContainer);
+    final foreground = isKholle
+        ? cs.onTertiaryContainer
+        : (palette?.foreground ?? cs.onSecondaryContainer);
+    final badge = isKholle
+        ? 'Khôlle'
+        : (event.cours == null ? null : _recurrenceBadge(event.cours!));
+    final details = [
+      if (event.salle.isNotEmpty) 'Salle ${event.salle}',
+      if (event.prof.isNotEmpty) event.prof,
+    ].join(' · ');
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showEnd = constraints.maxHeight >= 56;
+              final showDetails = constraints.maxHeight >= 100;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        event.startLabel,
+                        style: tt.labelMedium?.copyWith(
+                          color: foreground,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                        ),
+                      ),
+                      if (showEnd)
+                        Text(
+                          event.endLabel,
+                          style: tt.labelSmall?.copyWith(
+                            color: foreground.withValues(alpha: 0.75),
+                            height: 1.1,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          event.matiere,
+                          maxLines: showDetails ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.titleSmall?.copyWith(
+                            color: foreground,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
+                        if (showDetails && badge != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            badge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.labelSmall?.copyWith(
+                              color: foreground.withValues(alpha: 0.8),
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                        if (showDetails && details.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            details,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.labelSmall?.copyWith(
+                              color: foreground.withValues(alpha: 0.8),
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (constraints.maxHeight >= 44)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: foreground.withValues(alpha: 0.65),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NowLine extends StatelessWidget {
+  final Color color;
+  final double gutterWidth;
+  final String? label;
+
+  const _NowLine({
+    required this.color,
+    this.gutterWidth = 0,
+    this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return IgnorePointer(
+      child: Row(
+        children: [
+          SizedBox(
+            width: gutterWidth,
+            child: label == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text(
+                        label!,
+                        style: tt.labelSmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          Expanded(child: Container(height: 2, color: color)),
+        ],
       ),
     );
   }
