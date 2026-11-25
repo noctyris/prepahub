@@ -277,7 +277,7 @@ class _DevoirsPageState extends State<DevoirsPage> {
       isScrollControlled: true,
       showDragHandle: true,
       useSafeArea: true,
-      builder: (_) => _DevoirSettingsSheet(
+      builder: (_) => DevoirSettingsSheet(
         settings: _settings,
         allowed: _notificationsAllowed,
         supported: DevoirNotifications.instance.isSupported,
@@ -1171,22 +1171,23 @@ class _DevoirFormState extends State<_DevoirForm> {
   }
 }
 
-class _DevoirSettingsSheet extends StatefulWidget {
+class DevoirSettingsSheet extends StatefulWidget {
   final DevoirSettings settings;
   final bool allowed;
   final bool supported;
 
-  const _DevoirSettingsSheet({
+  const DevoirSettingsSheet({
+    super.key,
     required this.settings,
     required this.allowed,
     required this.supported,
   });
 
   @override
-  State<_DevoirSettingsSheet> createState() => _DevoirSettingsSheetState();
+  State<DevoirSettingsSheet> createState() => DevoirSettingsSheetState();
 }
 
-class _DevoirSettingsSheetState extends State<_DevoirSettingsSheet> {
+class DevoirSettingsSheetState extends State<DevoirSettingsSheet> {
   late DevoirSettings _settings;
   late bool _allowed;
 
