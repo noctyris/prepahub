@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app_settings.dart';
 import 'api/client.dart';
 import 'api/parse.dart';
+import 'colloscope.dart';
 import 'devoirs_notifications.dart';
 import 'edt.dart';
 import 'login.dart';
@@ -336,15 +337,49 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _addLocalNote() async {
+    final subjects = await _localNoteSubjects();
+    if (!mounted) return;
     final note = await showDialog<Note>(
       context: context,
-      builder: (_) => const _LocalNoteDialog(),
+      builder: (_) => _LocalNoteDialog(subjects: subjects),
     );
     if (note == null || !mounted) return;
     final next = [..._localNotes, note];
     setState(() => _localNotes = next);
     await NotesStore.saveLocalNotes(next);
     unawaited(_loadSubjectSeeds(semaines ?? const [], next));
+  }
+
+  /// Matières proposées à la saisie locale : celles des khôlles passées. Si le
+  /// colloscope est vide, on se rabat sur les matières déjà connues.
+  Future<List<String>> _localNoteSubjects() async {
+    final subjects = <String>{};
+    try {
+      subjects.addAll(pastColleSubjects(await ColloscopeStore.load()));
+    } catch (_) {}
+    if (subjects.isEmpty) {
+      for (final semaine in semaines ?? const <Semaine>[]) {
+        for (final note in semaine.notes) {
+          final matiere = canonicalSubject(note.matiere);
+          if (matiere.isNotEmpty) subjects.add(matiere);
+        }
+      }
+      for (final note in _localNotes) {
+        final matiere = canonicalSubject(note.matiere);
+        if (matiere.isNotEmpty) subjects.add(matiere);
+      }
+    }
+    if (subjects.isEmpty) {
+      try {
+        final cours = await EdtStore.load();
+        for (final item in cours) {
+          final matiere = canonicalSubject(item.matiere);
+          if (matiere.isNotEmpty) subjects.add(matiere);
+        }
+      } catch (_) {}
+    }
+    return subjects.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   Future<void> _deleteLocalNote(Note note) async {
@@ -735,35 +770,37 @@ class _LocalNotesCard extends StatelessWidget {
 }
 
 class _LocalNoteDialog extends StatefulWidget {
-  const _LocalNoteDialog();
+  final List<String> subjects;
+
+  const _LocalNoteDialog({required this.subjects});
 
   @override
   State<_LocalNoteDialog> createState() => _LocalNoteDialogState();
 }
 
 class _LocalNoteDialogState extends State<_LocalNoteDialog> {
-  final _matiere = TextEditingController();
+  String? _matiere;
   final _note = TextEditingController();
   final _professeur = TextEditingController();
-  String? _error;
+  String? _subjectError;
+  String? _noteError;
 
   @override
   void dispose() {
-    _matiere.dispose();
     _note.dispose();
     _professeur.dispose();
     super.dispose();
   }
 
   void _submit() {
-    final matiere = _matiere.text.trim();
+    final matiere = _matiere?.trim() ?? '';
     final value = double.tryParse(_note.text.trim().replaceAll(',', '.'));
     if (matiere.isEmpty) {
-      setState(() => _error = 'Indique la matière');
+      setState(() => _subjectError = 'Choisis une matière');
       return;
     }
     if (value == null || value < 0 || value > 20) {
-      setState(() => _error = 'Indique une note entre 0 et 20');
+      setState(() => _noteError = 'Indique une note entre 0 et 20');
       return;
     }
     Navigator.pop(
@@ -791,17 +828,34 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
               'Elle reste sur cet appareil jusqu’à sa publication sur le portail.',
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _matiere,
-              textCapitalization: TextCapitalization.words,
+            InputDecorator(
+              isEmpty: _matiere == null,
               decoration: InputDecoration(
                 labelText: 'Matière',
                 border: const OutlineInputBorder(),
-                errorText: _error,
+                errorText: _subjectError,
+                helperText: widget.subjects.isEmpty
+                    ? 'Ajoute d’abord une khôlle passée pour choisir une matière.'
+                    : 'D’après tes khôlles passées',
+                helperMaxLines: 2,
               ),
-              onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
-              },
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _matiere,
+                  isExpanded: true,
+                  hint: const Text('Choisir une matière'),
+                  items: [
+                    for (final subject in widget.subjects)
+                      DropdownMenuItem(value: subject, child: Text(subject)),
+                  ],
+                  onChanged: widget.subjects.isEmpty
+                      ? null
+                      : (value) => setState(() {
+                          _matiere = value;
+                          _subjectError = null;
+                        }),
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -809,10 +863,14 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Note sur 20',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                errorText: _noteError,
               ),
+              onChanged: (_) {
+                if (_noteError != null) setState(() => _noteError = null);
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -831,7 +889,10 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Annuler'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Ajouter')),
+        FilledButton(
+          onPressed: widget.subjects.isEmpty ? null : _submit,
+          child: const Text('Ajouter'),
+        ),
       ],
     );
   }
