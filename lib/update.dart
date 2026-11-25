@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
@@ -16,6 +17,18 @@ class AppUpdate {
 List<int> _parse(String v) {
   final core = v.trim().replaceFirst(RegExp(r'^v'), '').split(RegExp(r'[-+]')).first;
   return [for (final p in core.split('.')) int.tryParse(p) ?? 0];
+}
+
+bool _matchesPlatformAsset(String name) {
+  if (Platform.isAndroid) return name.endsWith('.apk');
+  if (Platform.isWindows) {
+    return name.contains('windows') && name.endsWith('.zip');
+  }
+  if (Platform.isMacOS) return name.contains('macos') && name.endsWith('.zip');
+  if (Platform.isLinux) {
+    return name.contains('linux') && name.endsWith('.tar.gz');
+  }
+  return false;
 }
 
 bool isNewerVersion(String a, String b) {
@@ -47,7 +60,7 @@ Future<AppUpdate?> checkForUpdate() async {
     var url = (json['html_url'] as String?) ?? 'https://github.com/$_repo/releases';
     for (final a in (json['assets'] as List? ?? const [])) {
       final name = (a as Map)['name'] as String? ?? '';
-      if (name.endsWith('.apk')) {
+      if (_matchesPlatformAsset(name)) {
         url = a['browser_download_url'] as String? ?? url;
         break;
       }

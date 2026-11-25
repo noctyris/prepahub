@@ -5,10 +5,8 @@ on:
     tags: ["v*"]
 
 jobs:
-  build-release:
+  build-android:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
@@ -46,8 +44,101 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
       - name: Prepare artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk prepahub-${{ github.ref_name }}.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepahub-android
+          path: prepahub-${{ github.ref_name }}.apk
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: flutter config --enable-linux-desktop
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Package
+        run: tar -czf "prepahub-${GITHUB_REF_NAME}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepahub-linux
+          path: prepahub-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "prepahub-${{ github.ref_name }}-windows-x64.zip"
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepahub-windows
+          path: prepahub-*-windows-x64.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - name: Package
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/macos/Build/Products/Release/prepahub.app \
+            "prepahub-${GITHUB_REF_NAME}-macos.zip"
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepahub-macos
+          path: prepahub-*-macos.zip
+          if-no-files-found: error
+
+  publish:
+    needs:
+      - build-android
+      - build-linux
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: prepahub-*
+          merge-multiple: true
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: prepahub-${{ github.ref_name }}.apk
+          files: dist/*
+          fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
