@@ -144,6 +144,13 @@ class _NotesPageState extends State<NotesPage> {
                     ),
                   ],
                 ),
+                if (semaines != null && semaines!.isNotEmpty)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _NotesOverview(semaines: semaines!),
+                    ),
+                  ),
                 if (semaines == null || semaines?.isEmpty == true)
                   const SliverFillRemaining(
                     hasScrollBody: false,
@@ -224,6 +231,312 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NotesOverview extends StatelessWidget {
+  final List<Semaine> semaines;
+
+  const _NotesOverview({required this.semaines});
+
+  List<double> get _allNotes => [
+    for (final s in semaines)
+      for (final n in s.notes)
+        if (n.note != null) n.note!,
+  ];
+
+  List<({String label, double moyenne})> get _weeklyAverages {
+    final result = <({String label, double moyenne})>[];
+    for (var i = 0; i < semaines.length; i++) {
+      final s = semaines[i];
+      final values = [
+        for (final n in s.notes)
+          if (n.note != null) n.note!,
+      ];
+      if (values.isEmpty) continue;
+      final sum = values.fold<double>(0, (a, b) => a + b);
+      result.add((
+        label: s.numero != null ? 'S${s.numero}' : 'S${i + 1}',
+        moyenne: sum / values.length,
+      ));
+    }
+    return result;
+  }
+
+  /// Cinq tranches de 4 points : 0–4, 4–8, 8–12, 12–16, 16–20.
+  List<int> get _distribution {
+    final counts = List<int>.filled(5, 0);
+    for (final value in _allNotes) {
+      var bucket = (value / 4).floor();
+      if (bucket < 0) bucket = 0;
+      if (bucket > 4) bucket = 4;
+      counts[bucket]++;
+    }
+    return counts;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = _allNotes;
+    if (notes.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final overall = notes.reduce((a, b) => a + b) / notes.length;
+    final averages = _weeklyAverages;
+
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Aperçu', style: tt.titleMedium)),
+                Text(
+                  'Moyenne ${_fmt(overall)}',
+                  style: tt.titleSmall?.copyWith(color: cs.primary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Répartition des notes',
+              style: tt.labelLarge?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            _DistributionChart(counts: _distribution),
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text(
+              'Évolution de la moyenne',
+              style: tt.labelLarge?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            _EvolutionChart(points: averages),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DistributionChart extends StatelessWidget {
+  final List<int> counts;
+
+  const _DistributionChart({required this.counts});
+
+  static const _labels = ['0–4', '4–8', '8–12', '12–16', '16–20'];
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    var maxCount = 0;
+    for (final count in counts) {
+      if (count > maxCount) maxCount = count;
+    }
+    return SizedBox(
+      height: 96,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var i = 0; i < counts.length; i++)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${counts[i]}',
+                      style: tt.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: maxCount == 0
+                          ? 0.0
+                          : 4 + 60 * counts[i] / maxCount,
+                      decoration: BoxDecoration(
+                        color: cs.primary,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _labels[i],
+                      style: tt.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EvolutionChart extends StatelessWidget {
+  final List<({String label, double moyenne})> points;
+
+  const _EvolutionChart({required this.points});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    if (points.length < 2) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          points.isEmpty
+              ? 'Pas encore de note à suivre.'
+              : 'Une seule semaine notée pour le moment.',
+          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      );
+    }
+    return Semantics(
+      label:
+          'Évolution de la moyenne, de ${points.first.label} '
+          'à ${points.last.label}',
+      child: SizedBox(
+        height: 116,
+        child: CustomPaint(
+          painter: _EvolutionPainter(
+            values: [for (final p in points) p.moyenne],
+            labels: [for (final p in points) p.label],
+            line: cs.primary,
+            fill: cs.primary.withValues(alpha: 0.12),
+            grid: cs.outlineVariant.withValues(alpha: 0.5),
+            labelStyle:
+                tt.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontSize: 9,
+                ) ??
+                const TextStyle(fontSize: 9),
+          ),
+          size: Size.infinite,
+        ),
+      ),
+    );
+  }
+}
+
+class _EvolutionPainter extends CustomPainter {
+  final List<double> values;
+  final List<String> labels;
+  final Color line;
+  final Color fill;
+  final Color grid;
+  final TextStyle labelStyle;
+
+  const _EvolutionPainter({
+    required this.values,
+    required this.labels,
+    required this.line,
+    required this.fill,
+    required this.grid,
+    required this.labelStyle,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const leftGutter = 24.0;
+    const bottomGutter = 16.0;
+    const topPadding = 6.0;
+    final chartWidth = size.width - leftGutter;
+    final chartHeight = size.height - bottomGutter - topPadding;
+    if (chartWidth <= 0 || chartHeight <= 0 || values.isEmpty) return;
+
+    double yFor(double value) {
+      final clamped = value.clamp(0.0, 20.0).toDouble();
+      return topPadding + chartHeight * (1 - clamped / 20);
+    }
+
+    double xFor(int index) => leftGutter +
+        (values.length == 1
+            ? chartWidth / 2
+            : chartWidth * index / (values.length - 1));
+
+    void drawText(String text, Offset center) {
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: labelStyle),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      final x = (center.dx - tp.width / 2)
+          .clamp(0.0, size.width - tp.width)
+          .toDouble();
+      tp.paint(canvas, Offset(x, center.dy - tp.height / 2));
+    }
+
+    final gridPaint = Paint()
+      ..color = grid
+      ..strokeWidth = 1;
+    for (final value in const [0.0, 10.0, 20.0]) {
+      final y = yFor(value);
+      canvas.drawLine(Offset(leftGutter, y), Offset(size.width, y), gridPaint);
+      drawText('${value.toInt()}', Offset(leftGutter / 2, y));
+    }
+
+    final dots = [
+      for (var i = 0; i < values.length; i++)
+        Offset(xFor(i), yFor(values[i])),
+    ];
+
+    if (dots.length > 1) {
+      final path = Path()..moveTo(dots.first.dx, dots.first.dy);
+      for (final dot in dots.skip(1)) {
+        path.lineTo(dot.dx, dot.dy);
+      }
+      final area = Path.from(path)
+        ..lineTo(dots.last.dx, yFor(0))
+        ..lineTo(dots.first.dx, yFor(0))
+        ..close();
+      canvas.drawPath(area, Paint()..color = fill);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = line
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+    final dotPaint = Paint()..color = line;
+    for (final dot in dots) {
+      canvas.drawCircle(dot, 3, dotPaint);
+    }
+
+    final labelY = size.height - bottomGutter / 2;
+    drawText(labels.first, Offset(xFor(0), labelY));
+    if (values.length > 1) {
+      drawText(
+        labels.last,
+        Offset(xFor(values.length - 1), labelY),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_EvolutionPainter oldDelegate) =>
+      oldDelegate.values != values ||
+      oldDelegate.labels != labels ||
+      oldDelegate.line != line ||
+      oldDelegate.fill != fill ||
+      oldDelegate.grid != grid ||
+      oldDelegate.labelStyle != labelStyle;
 }
 
 class _SemaineCard extends StatelessWidget {
