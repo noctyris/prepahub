@@ -9,6 +9,7 @@ import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'api/parse.dart';
+import 'colloscope.dart';
 import 'devoirs.dart';
 import 'edt.dart';
 
@@ -22,6 +23,9 @@ class DevoirNotificationTap {
 final ValueNotifier<DevoirNotificationTap?> devoirNotificationTap =
     ValueNotifier<DevoirNotificationTap?>(null);
 
+/// Renseigné quand l'utilisateur touche un rappel de khôlle.
+final ValueNotifier<bool> colleNotificationTap = ValueNotifier<bool>(false);
+
 class DevoirNotifications {
   DevoirNotifications._();
 
@@ -30,7 +34,11 @@ class DevoirNotifications {
   static const _eveningBaseId = 41000;
   static const _courseBaseId = 42000;
   static const _gradesId = 43000;
+  static const _colleBaseId = 44000;
   static const _maxCourseNotifications = 40;
+  // iOS ne garde que 64 notifications planifiées au total. Avec les 40 fins
+  // de cours et les 14 rappels du soir, on réserve 10 places aux khôlles.
+  static const _maxColleNotifications = 10;
   static const _eveningDays = 14;
 
   final FlutterLocalNotificationsPlugin _plugin =
@@ -86,7 +94,12 @@ class DevoirNotifications {
   }
 
   void _emitTap(String? payload) {
-    if (payload == null || !payload.startsWith('devoir:')) return;
+    if (payload == null) return;
+    if (payload.startsWith('colle:')) {
+      colleNotificationTap.value = true;
+      return;
+    }
+    if (!payload.startsWith('devoir:')) return;
     if (payload.startsWith('devoir:course:')) {
       String matiere;
       try {
@@ -219,7 +232,11 @@ class DevoirNotifications {
 
     final devoirs = await DevoirsStore.load();
     final settings = await DevoirSettingsStore.load();
-    if (!settings.eveningEnabled && !settings.endOfClassEnabled) return;
+    if (!settings.eveningEnabled &&
+        !settings.endOfClassEnabled &&
+        !settings.colleEnabled) {
+      return;
+    }
 
     final now = tz.TZDateTime.now(tz.local);
     if (settings.eveningEnabled) {
@@ -228,6 +245,15 @@ class DevoirNotifications {
     if (settings.endOfClassEnabled) {
       await _scheduleCourseEnds(now);
     }
+    if (settings.colleEnabled) {
+      List<Colle> colles;
+      try {
+        colles = await ColloscopeStore.load();
+      } catch (_) {
+        colles = [];
+      }
+      await _scheduleColles(colles, settings, now);
+    }
   }
 
   Future<void> _cancelScheduled() async {
@@ -235,7 +261,7 @@ class DevoirNotifications {
       final pending = await _plugin.pendingNotificationRequests();
       for (final notification in pending) {
         if (notification.id >= _eveningBaseId &&
-            notification.id < _courseBaseId + 100) {
+            notification.id < _colleBaseId + 100) {
           await _plugin.cancel(id: notification.id);
         }
       }
@@ -369,6 +395,52 @@ class DevoirNotifications {
     }
   }
 
+  Future<void> _scheduleColles(
+    List<Colle> colles,
+    DevoirSettings settings,
+    tz.TZDateTime now,
+  ) async {
+    final sorted = [...colles]..sort((a, b) => a.date.compareTo(b.date));
+    var index = 0;
+    for (final colle in sorted) {
+      final dayBefore = DateTime(
+        colle.date.year,
+        colle.date.month,
+        colle.date.day - 1,
+      );
+      final scheduled = tz.TZDateTime(
+        tz.local,
+        dayBefore.year,
+        dayBefore.month,
+        dayBefore.day,
+        settings.eveningHour,
+        settings.eveningMinute,
+      );
+      if (!scheduled.isAfter(now)) continue;
+      if (scheduled.isAfter(now.add(const Duration(days: 60)))) continue;
+      final salle = colle.salle.trim();
+      final body = [
+        '${colle.matiere} à ${_timeLabel(colle.date)}',
+        if (salle.isNotEmpty) 'salle $salle',
+      ].join(' · ');
+      await _plugin.zonedSchedule(
+        id: _colleBaseId + index,
+        title: 'Khôlle demain',
+        body: body,
+        scheduledDate: scheduled,
+        notificationDetails: _notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: 'colle:reminder',
+      );
+      index++;
+      if (index >= _maxColleNotifications) return;
+    }
+  }
+
+  String _timeLabel(DateTime date) =>
+      '${date.hour.toString().padLeft(2, '0')}h'
+      '${date.minute.toString().padLeft(2, '0')}';
+
   int? _minutes(String raw) {
     final parts = raw.replaceAll('h', ':').split(':');
     final hour = int.tryParse(parts.first);
@@ -397,9 +469,10 @@ class DevoirNotifications {
   static const NotificationDetails _notificationDetails = NotificationDetails(
     android: AndroidNotificationDetails(
       'devoirs_rappels',
-      'Devoirs et fins de cours',
+      'Devoirs, khôlles et fins de cours',
       icon: 'ic_stat_devoirs',
-      channelDescription: 'Rappels des devoirs du lendemain et fins de cours',
+      channelDescription:
+          'Rappels des devoirs et khôlles du lendemain et fins de cours',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
     ),

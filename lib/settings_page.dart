@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'app_lock.dart';
 import 'app_settings.dart';
 import 'devoirs.dart';
 import 'devoirs_notifications.dart';
@@ -30,6 +31,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   DevoirSettings _devoirSettings = DevoirSettings.defaults;
   bool _notificationsAllowed = true;
+  bool? _lockSupported;
   String _version = '';
 
   @override
@@ -54,11 +56,13 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       version = (await PackageInfo.fromPlatform()).version;
     } catch (_) {}
+    final lockSupported = await AppLockService.canAuthenticate();
 
     if (!mounted) return;
     setState(() {
       _devoirSettings = devoirSettings;
       _notificationsAllowed = notificationsAllowed;
+      _lockSupported = lockSupported;
       _version = version;
     });
   }
@@ -143,6 +147,21 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _notificationsAllowed = granted);
   }
 
+  Future<void> _toggleAppLock(bool value) async {
+    final allowed = await AppLockService.authenticate(
+      reason: value
+          ? 'Confirme ton identité pour activer le verrouillage'
+          : 'Confirme ton identité pour désactiver le verrouillage',
+    );
+    if (!mounted) return;
+    if (!allowed) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Vérification annulée')));
+      return;
+    }
+    await _update(widget.settings.copyWith(appLock: value));
+  }
+
   Future<void> _chooseNotesLayout() async {
     final settings = widget.settings;
     final picked = await showDialog<NotesLayout>(
@@ -200,6 +219,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (_devoirSettings.eveningEnabled)
         'Rappel du soir à ${_two(_devoirSettings.eveningHour)}h${_two(_devoirSettings.eveningMinute)}',
       if (_devoirSettings.endOfClassEnabled) 'Fin de cours',
+      if (_devoirSettings.colleEnabled) 'Khôlles la veille',
     ];
     var summary = parts.isEmpty ? 'Désactivés' : parts.join(' · ');
     if (!_notificationsAllowed) {
@@ -323,6 +343,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (value) =>
                       unawaited(_toggleGradeNotifications(value)),
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.sync),
+                  title: const Text('Actualisation automatique'),
+                  subtitle: const Text(
+                    'Toutes les 30 minutes quand l’application est ouverte, '
+                    'et au retour dans l’application.',
+                  ),
+                  value: settings.autoRefresh,
+                  onChanged: (value) =>
+                      unawaited(_update(settings.copyWith(autoRefresh: value))),
+                ),
               ],
             ),
           ),
@@ -362,6 +394,28 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: Text(_reminderSummary),
               trailing: const Icon(Icons.chevron_right),
               onTap: _openReminders,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _sectionTitle(context, 'Sécurité'),
+          Card.filled(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.fingerprint),
+              title: const Text('Verrouillage biométrique'),
+              subtitle: Text(
+                _lockSupported == null
+                    ? 'Vérification de la disponibilité…'
+                    : _lockSupported!
+                    ? 'Demande ton empreinte, ton visage ou le code de '
+                          'l’appareil à l’ouverture et au retour dans l’app.'
+                    : 'Non disponible sur cet appareil.',
+              ),
+              value: settings.appLock,
+              onChanged: (_lockSupported ?? false)
+                  ? (value) => unawaited(_toggleAppLock(value))
+                  : null,
             ),
           ),
           const SizedBox(height: 24),

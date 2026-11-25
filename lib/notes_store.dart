@@ -1,10 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api/client.dart';
 import 'api/parse.dart';
+import 'devoirs_notifications.dart';
+
+/// Incrémenté après une actualisation automatique pour que les écrans ouverts
+/// puissent recharger le cache sans action de l'utilisateur.
+final ValueNotifier<int> notesRevision = ValueNotifier<int>(0);
 
 /// Cache local des notes du portail, notes saisies à la main et empreinte des
 /// dernières notes vues pour détecter les nouveautés.
@@ -60,10 +67,7 @@ class NotesStore {
         flush: true,
       );
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(
-        _cacheDateKey,
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      await prefs.setInt(_cacheDateKey, DateTime.now().millisecondsSinceEpoch);
     } catch (_) {}
   }
 
@@ -138,4 +142,34 @@ class NotesStore {
       for (final note in semaine.notes)
         if (!note.local) signature(semaine, note),
   };
+}
+
+/// Actualise les notes sans passer par l'interface, pour l'actualisation
+/// automatique et les rappels. Renvoie `false` si aucun identifiant n'est
+/// disponible ou si le portail est injoignable.
+Future<bool> refreshNotesInBackground({required bool notify}) async {
+  try {
+    final creds = await loadCreds();
+    if (creds == null) return false;
+    final semaines = await getNotes(
+      creds.username,
+      creds.password,
+      portal: creds.portal,
+    );
+    await NotesStore.setUser(creds.username);
+    await NotesStore.saveCache(semaines);
+    final current = NotesStore.signatures(semaines);
+    final previous = await NotesStore.loadSeenSignatures();
+    await NotesStore.saveSeenSignatures(current);
+    if (notify && previous != null) {
+      final count = current.difference(previous).length;
+      if (count > 0) {
+        await DevoirNotifications.instance.notifyNewGrades(count);
+      }
+    }
+    notesRevision.value++;
+    return true;
+  } catch (_) {
+    return false;
+  }
 }

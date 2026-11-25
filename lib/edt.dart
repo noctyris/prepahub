@@ -376,8 +376,11 @@ class _EDTPageState extends State<EDTPage> {
   }
 
   Future<void> _openColles() async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ColloscopePage()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ColloscopePage(onChanged: widget.onTimetableChanged),
+      ),
+    );
     if (!mounted) return;
     List<Colle> colles;
     try {
@@ -387,6 +390,7 @@ class _EDTPageState extends State<EDTPage> {
     }
     if (!mounted) return;
     setState(() => _colles = colles);
+    widget.onTimetableChanged?.call();
   }
 
   int? _seedFor(String matiere) => _subjectSeeds[_subjectKey(matiere)];
@@ -736,9 +740,7 @@ class _EdtEvent {
   String get endLabel => _displayMinutes(end);
 }
 
-Map<_EdtEvent, ({int lane, int count})> _layoutLanes(
-  List<_EdtEvent> sorted,
-) {
+Map<_EdtEvent, ({int lane, int count})> _layoutLanes(List<_EdtEvent> sorted) {
   final result = <_EdtEvent, ({int lane, int count})>{};
   var cluster = <_EdtEvent>[];
   var clusterEnd = 0;
@@ -823,7 +825,8 @@ class _WeekGrid extends StatelessWidget {
     if (endHour > 24) endHour = 24;
     final totalHeight = (endHour - startHour) * _hourHeight;
     final gridHeight = totalHeight + 8;
-    final nowTop = todayColumn >= 0 &&
+    final nowTop =
+        todayColumn >= 0 &&
             nowMinutes >= startHour * 60 &&
             nowMinutes <= endHour * 60
         ? ((nowMinutes - startHour * 60) / 60 * _hourHeight - 7)
@@ -921,8 +924,7 @@ class _WeekGrid extends StatelessWidget {
                         if (nowTop != null)
                           Positioned(
                             top: nowTop,
-                            left:
-                                _gutterWidth + todayColumn * dayWidth,
+                            left: _gutterWidth + todayColumn * dayWidth,
                             width: dayWidth,
                             height: 14,
                             child: _NowLine(color: cs.error),
@@ -1229,9 +1231,8 @@ class _DayTimeline extends StatelessWidget {
     final scale = _hourHeight / 60;
     final sorted = [...events]..sort((a, b) => a.start.compareTo(b.start));
     final layout = _layoutLanes(sorted);
-    final nowTop = isToday &&
-            nowMinutes >= startHour * 60 &&
-            nowMinutes <= endHour * 60
+    final nowTop =
+        isToday && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
         ? ((nowMinutes - startHour * 60) * scale - 7)
               .clamp(0.0, gridHeight - 14)
               .toDouble()
@@ -1446,11 +1447,7 @@ class _NowLine extends StatelessWidget {
   final double gutterWidth;
   final String? label;
 
-  const _NowLine({
-    required this.color,
-    this.gutterWidth = 0,
-    this.label,
-  });
+  const _NowLine({required this.color, this.gutterWidth = 0, this.label});
 
   @override
   Widget build(BuildContext context) {

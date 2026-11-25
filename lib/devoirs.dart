@@ -333,12 +333,14 @@ class DevoirsStore {
 class DevoirSettings {
   final bool eveningEnabled;
   final bool endOfClassEnabled;
+  final bool colleEnabled;
   final int eveningHour;
   final int eveningMinute;
 
   const DevoirSettings({
     required this.eveningEnabled,
     required this.endOfClassEnabled,
+    this.colleEnabled = true,
     required this.eveningHour,
     required this.eveningMinute,
   });
@@ -346,6 +348,7 @@ class DevoirSettings {
   static const defaults = DevoirSettings(
     eveningEnabled: true,
     endOfClassEnabled: true,
+    colleEnabled: true,
     eveningHour: 18,
     eveningMinute: 30,
   );
@@ -353,11 +356,13 @@ class DevoirSettings {
   DevoirSettings copyWith({
     bool? eveningEnabled,
     bool? endOfClassEnabled,
+    bool? colleEnabled,
     int? eveningHour,
     int? eveningMinute,
   }) => DevoirSettings(
     eveningEnabled: eveningEnabled ?? this.eveningEnabled,
     endOfClassEnabled: endOfClassEnabled ?? this.endOfClassEnabled,
+    colleEnabled: colleEnabled ?? this.colleEnabled,
     eveningHour: eveningHour ?? this.eveningHour,
     eveningMinute: eveningMinute ?? this.eveningMinute,
   );
@@ -366,6 +371,7 @@ class DevoirSettings {
 class DevoirSettingsStore {
   static const _eveningEnabledKey = 'devoirs_rappel_soir_actif';
   static const _endOfClassEnabledKey = 'devoirs_fin_cours_actif';
+  static const _colleEnabledKey = 'devoirs_rappel_kholles_actif';
   static const _eveningHourKey = 'devoirs_rappel_soir_heure';
   static const _eveningMinuteKey = 'devoirs_rappel_soir_minute';
 
@@ -379,6 +385,9 @@ class DevoirSettingsStore {
         endOfClassEnabled:
             prefs.getBool(_endOfClassEnabledKey) ??
             DevoirSettings.defaults.endOfClassEnabled,
+        colleEnabled:
+            prefs.getBool(_colleEnabledKey) ??
+            DevoirSettings.defaults.colleEnabled,
         eveningHour:
             (prefs.getInt(_eveningHourKey) ??
                     DevoirSettings.defaults.eveningHour)
@@ -399,6 +408,7 @@ class DevoirSettingsStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_eveningEnabledKey, settings.eveningEnabled);
     await prefs.setBool(_endOfClassEnabledKey, settings.endOfClassEnabled);
+    await prefs.setBool(_colleEnabledKey, settings.colleEnabled);
     await prefs.setInt(_eveningHourKey, settings.eveningHour);
     await prefs.setInt(_eveningMinuteKey, settings.eveningMinute);
   }

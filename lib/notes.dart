@@ -6,8 +6,11 @@ import 'app_settings.dart';
 import 'api/client.dart';
 import 'api/parse.dart';
 import 'devoirs_notifications.dart';
+import 'edt.dart';
 import 'login.dart';
+import 'notes_overview.dart';
 import 'notes_store.dart';
+import 'subjects.dart';
 
 String _fmt(double? v) {
   if (v == null) return '—';
@@ -57,6 +60,7 @@ class _NotesPageState extends State<NotesPage> {
   DateTime? _cacheDate;
   List<Semaine>? semaines;
   List<Note> _localNotes = [];
+  Map<String, int> _subjectSeeds = const {};
   final Set<String> _ignoredDuplicates = {};
   String? error;
   String? loginNotice;
@@ -64,7 +68,32 @@ class _NotesPageState extends State<NotesPage> {
   @override
   void initState() {
     super.initState();
+    notesRevision.addListener(_onExternalRefresh);
     _autoLogin();
+  }
+
+  @override
+  void dispose() {
+    notesRevision.removeListener(_onExternalRefresh);
+    super.dispose();
+  }
+
+  void _onExternalRefresh() {
+    unawaited(_reloadFromCache());
+  }
+
+  Future<void> _reloadFromCache() async {
+    if (!mounted || semaines == null) return;
+    final cached = await NotesStore.loadCache();
+    final local = await NotesStore.loadLocalNotes();
+    if (!mounted || cached.isEmpty) return;
+    setState(() {
+      semaines = cached;
+      _localNotes = local;
+      _offline = false;
+      error = null;
+    });
+    await _loadSubjectSeeds(cached, local);
   }
 
   Future<void> _autoLogin() async {
@@ -84,6 +113,7 @@ class _NotesPageState extends State<NotesPage> {
       final cached = await NotesStore.loadCache();
       final cacheDate = await NotesStore.loadCacheDate();
       final local = await NotesStore.loadLocalNotes();
+      unawaited(_loadSubjectSeeds(cached, local));
       if (!mounted) return;
       if (cached.isNotEmpty || local.isNotEmpty) {
         setState(() {
@@ -174,6 +204,7 @@ class _NotesPageState extends State<NotesPage> {
     await NotesStore.saveCache(s);
     final date = await NotesStore.loadCacheDate();
     if (mounted) setState(() => _cacheDate = date);
+    await _loadSubjectSeeds(s, _localNotes);
     await _notifyNewGrades(s);
     if (!mounted) return;
     await _resolveLocalDuplicates(s);
@@ -203,8 +234,7 @@ class _NotesPageState extends State<NotesPage> {
       for (final local in _localNotes)
         if (local.id != null && !_ignoredDuplicates.contains(local.id))
           if (s.any(
-            (semaine) =>
-                semaine.notes.any((note) => _similar(local, note)),
+            (semaine) => semaine.notes.any((note) => _similar(local, note)),
           ))
             local,
     ];
@@ -299,9 +329,9 @@ class _NotesPageState extends State<NotesPage> {
           .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Actualisation impossible')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Actualisation impossible')));
     }
   }
 
@@ -314,6 +344,7 @@ class _NotesPageState extends State<NotesPage> {
     final next = [..._localNotes, note];
     setState(() => _localNotes = next);
     await NotesStore.saveLocalNotes(next);
+    unawaited(_loadSubjectSeeds(semaines ?? const [], next));
   }
 
   Future<void> _deleteLocalNote(Note note) async {
@@ -323,6 +354,50 @@ class _NotesPageState extends State<NotesPage> {
     ];
     setState(() => _localNotes = next);
     await NotesStore.saveLocalNotes(next);
+    unawaited(_loadSubjectSeeds(semaines ?? const [], next));
+  }
+
+  /// Récupère les couleurs définies dans l'emploi du temps pour chaque
+  /// matière, en regroupant TD, TP et cours sous la même couleur.
+  Future<void> _loadSubjectSeeds(List<Semaine> weeks, List<Note> local) async {
+    try {
+      final edt = await EdtStore.load();
+      final edtNames = <String>{
+        for (final cours in edt)
+          if (cours.matiere.trim().isNotEmpty) cours.matiere,
+      };
+      final noteNames = <String>{
+        for (final semaine in weeks)
+          for (final note in semaine.notes)
+            if (note.matiere.trim().isNotEmpty) note.matiere,
+        for (final note in local)
+          if (note.matiere.trim().isNotEmpty) note.matiere,
+      };
+      final names = {...edtNames, ...noteNames};
+      if (names.isEmpty) return;
+      final colors = await EdtColorStore.load(names);
+      final seeds = <String, int>{};
+      void assign(String name) {
+        final seed = EdtColorStore.seedFor(colors, name);
+        if (seed != null) {
+          seeds.putIfAbsent(canonicalSubject(name), () => seed);
+        }
+      }
+
+      // Les couleurs de l'emploi du temps priment, en commençant par les
+      // matières dont le nom est déjà la forme regroupée.
+      for (final name in edtNames) {
+        if (canonicalSubject(name) == name.trim()) assign(name);
+      }
+      for (final name in edtNames) {
+        assign(name);
+      }
+      for (final name in noteNames) {
+        assign(name);
+      }
+      if (!mounted) return;
+      setState(() => _subjectSeeds = seeds);
+    } catch (_) {}
   }
 
   Future<void> _logout({String? notice}) async {
@@ -489,9 +564,10 @@ class _NotesPageState extends State<NotesPage> {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   sliver: SliverToBoxAdapter(
-                    child: _NotesOverview(
+                    child: NotesOverview(
                       semaines: weeks,
                       extraNotes: _localNotes,
+                      subjectSeeds: _subjectSeeds,
                     ),
                   ),
                 ),
@@ -892,8 +968,11 @@ class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
   final VoidCallback onLogout;
-  const _ErrorView(
-      {required this.message, required this.onRetry, required this.onLogout});
+  const _ErrorView({
+    required this.message,
+    required this.onRetry,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -908,15 +987,17 @@ class _ErrorView extends StatelessWidget {
               children: [
                 Icon(Icons.cloud_off_rounded, size: 64, color: cs.primary),
                 const SizedBox(height: 16),
-                Text('Connexion impossible',
-                    style: Theme.of(context).textTheme.headlineSmall),
+                Text(
+                  'Connexion impossible',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
                 const SizedBox(height: 8),
-                Text(message,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: cs.onSurfaceVariant)),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: cs.onSurfaceVariant),
+                ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
                   onPressed: onRetry,
@@ -924,7 +1005,9 @@ class _ErrorView extends StatelessWidget {
                   label: const Text('Réessayer'),
                 ),
                 TextButton(
-                    onPressed: onLogout, child: const Text('Changer de compte')),
+                  onPressed: onLogout,
+                  child: const Text('Changer de compte'),
+                ),
               ],
             ),
           ),
@@ -932,318 +1015,6 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
-}
-
-class _NotesOverview extends StatelessWidget {
-  final List<Semaine> semaines;
-  final List<Note> extraNotes;
-
-  const _NotesOverview({
-    required this.semaines,
-    this.extraNotes = const [],
-  });
-
-  List<double> get _allNotes => [
-    for (final s in semaines)
-      for (final n in s.notes)
-        if (n.note != null) n.note!,
-    for (final n in extraNotes)
-      if (n.note != null) n.note!,
-  ];
-
-  List<({String label, double moyenne})> get _weeklyAverages {
-    final result = <({String label, double moyenne})>[];
-    for (var i = 0; i < semaines.length; i++) {
-      final s = semaines[i];
-      final values = [
-        for (final n in s.notes)
-          if (n.note != null) n.note!,
-      ];
-      if (values.isEmpty) continue;
-      final sum = values.fold<double>(0, (a, b) => a + b);
-      result.add((
-        label: s.numero != null ? 'S${s.numero}' : 'S${i + 1}',
-        moyenne: sum / values.length,
-      ));
-    }
-    return result;
-  }
-
-  /// Cinq tranches de 4 points : 0–4, 4–8, 8–12, 12–16, 16–20.
-  List<int> get _distribution {
-    final counts = List<int>.filled(5, 0);
-    for (final value in _allNotes) {
-      var bucket = (value / 4).floor();
-      if (bucket < 0) bucket = 0;
-      if (bucket > 4) bucket = 4;
-      counts[bucket]++;
-    }
-    return counts;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final notes = _allNotes;
-    if (notes.isEmpty) return const SizedBox.shrink();
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final overall = notes.reduce((a, b) => a + b) / notes.length;
-    final averages = _weeklyAverages;
-
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('Aperçu', style: tt.titleMedium)),
-                Text(
-                  'Moyenne ${_fmt(overall)}',
-                  style: tt.titleSmall?.copyWith(color: cs.primary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Répartition des notes',
-              style: tt.labelLarge?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            _DistributionChart(counts: _distribution),
-            const SizedBox(height: 8),
-            const Divider(),
-            const SizedBox(height: 8),
-            Text(
-              'Évolution de la moyenne',
-              style: tt.labelLarge?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            _EvolutionChart(points: averages),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DistributionChart extends StatelessWidget {
-  final List<int> counts;
-
-  const _DistributionChart({required this.counts});
-
-  static const _labels = ['0–4', '4–8', '8–12', '12–16', '16–20'];
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    var maxCount = 0;
-    for (final count in counts) {
-      if (count > maxCount) maxCount = count;
-    }
-    return SizedBox(
-      height: 96,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 0; i < counts.length; i++)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${counts[i]}',
-                      style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: maxCount == 0
-                          ? 0.0
-                          : 4 + 60 * counts[i] / maxCount,
-                      decoration: BoxDecoration(
-                        color: cs.primary,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _labels[i],
-                      style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 9,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EvolutionChart extends StatelessWidget {
-  final List<({String label, double moyenne})> points;
-
-  const _EvolutionChart({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    if (points.length < 2) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          points.isEmpty
-              ? 'Pas encore de note à suivre.'
-              : 'Une seule semaine notée pour le moment.',
-          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-        ),
-      );
-    }
-    return Semantics(
-      label:
-          'Évolution de la moyenne, de ${points.first.label} '
-          'à ${points.last.label}',
-      child: SizedBox(
-        height: 116,
-        child: CustomPaint(
-          painter: _EvolutionPainter(
-            values: [for (final p in points) p.moyenne],
-            labels: [for (final p in points) p.label],
-            line: cs.primary,
-            fill: cs.primary.withValues(alpha: 0.12),
-            grid: cs.outlineVariant.withValues(alpha: 0.5),
-            labelStyle:
-                tt.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontSize: 9,
-                ) ??
-                const TextStyle(fontSize: 9),
-          ),
-          size: Size.infinite,
-        ),
-      ),
-    );
-  }
-}
-
-class _EvolutionPainter extends CustomPainter {
-  final List<double> values;
-  final List<String> labels;
-  final Color line;
-  final Color fill;
-  final Color grid;
-  final TextStyle labelStyle;
-
-  const _EvolutionPainter({
-    required this.values,
-    required this.labels,
-    required this.line,
-    required this.fill,
-    required this.grid,
-    required this.labelStyle,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const leftGutter = 24.0;
-    const bottomGutter = 16.0;
-    const topPadding = 6.0;
-    final chartWidth = size.width - leftGutter;
-    final chartHeight = size.height - bottomGutter - topPadding;
-    if (chartWidth <= 0 || chartHeight <= 0 || values.isEmpty) return;
-
-    double yFor(double value) {
-      final clamped = value.clamp(0.0, 20.0).toDouble();
-      return topPadding + chartHeight * (1 - clamped / 20);
-    }
-
-    double xFor(int index) => leftGutter +
-        (values.length == 1
-            ? chartWidth / 2
-            : chartWidth * index / (values.length - 1));
-
-    void drawText(String text, Offset center) {
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: labelStyle),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
-      final x = (center.dx - tp.width / 2)
-          .clamp(0.0, size.width - tp.width)
-          .toDouble();
-      tp.paint(canvas, Offset(x, center.dy - tp.height / 2));
-    }
-
-    final gridPaint = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    for (final value in const [0.0, 10.0, 20.0]) {
-      final y = yFor(value);
-      canvas.drawLine(Offset(leftGutter, y), Offset(size.width, y), gridPaint);
-      drawText('${value.toInt()}', Offset(leftGutter / 2, y));
-    }
-
-    final dots = [
-      for (var i = 0; i < values.length; i++)
-        Offset(xFor(i), yFor(values[i])),
-    ];
-
-    if (dots.length > 1) {
-      final path = Path()..moveTo(dots.first.dx, dots.first.dy);
-      for (final dot in dots.skip(1)) {
-        path.lineTo(dot.dx, dot.dy);
-      }
-      final area = Path.from(path)
-        ..lineTo(dots.last.dx, yFor(0))
-        ..lineTo(dots.first.dx, yFor(0))
-        ..close();
-      canvas.drawPath(area, Paint()..color = fill);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = line
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round,
-      );
-    }
-    final dotPaint = Paint()..color = line;
-    for (final dot in dots) {
-      canvas.drawCircle(dot, 3, dotPaint);
-    }
-
-    final labelY = size.height - bottomGutter / 2;
-    drawText(labels.first, Offset(xFor(0), labelY));
-    if (values.length > 1) {
-      drawText(
-        labels.last,
-        Offset(xFor(values.length - 1), labelY),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_EvolutionPainter oldDelegate) =>
-      oldDelegate.values != values ||
-      oldDelegate.labels != labels ||
-      oldDelegate.line != line ||
-      oldDelegate.fill != fill ||
-      oldDelegate.grid != grid ||
-      oldDelegate.labelStyle != labelStyle;
 }
 
 class _SemaineCard extends StatelessWidget {
@@ -1412,9 +1183,7 @@ class _SemaineGridCard extends StatelessWidget {
                   ),
                   Text(
                     '${semaine.notes.length}',
-                    style: tt.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -1476,9 +1245,7 @@ class _SemaineGridCard extends StatelessWidget {
                   child: Text(
                     '+${graded.length - 2} autre'
                     '${graded.length - 2 > 1 ? 's' : ''}',
-                    style: tt.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ),
             ],
@@ -1493,10 +1260,7 @@ class _SemaineSection extends StatelessWidget {
   final Semaine semaine;
   final bool showDivider;
 
-  const _SemaineSection({
-    required this.semaine,
-    required this.showDivider,
-  });
+  const _SemaineSection({required this.semaine, required this.showDivider});
 
   @override
   Widget build(BuildContext context) {
@@ -1515,9 +1279,7 @@ class _SemaineSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   _weekTitle(semaine),
-                  style: tt.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
               if (average != null)
@@ -1584,9 +1346,7 @@ class _WeekDrawerLayoutState extends State<_WeekDrawerLayout> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final index = _selected
-        .clamp(0, widget.semaines.length - 1)
-        .toInt();
+    final index = _selected.clamp(0, widget.semaines.length - 1).toInt();
     final semaine = widget.semaines[index];
     final average = _weekAverage(semaine);
     final n = semaine.notes.length;
@@ -1627,9 +1387,7 @@ class _WeekDrawerLayoutState extends State<_WeekDrawerLayout> {
                   const SizedBox(height: 2),
                   Text(
                     _weekDates(semaine),
-                    style: tt.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                   if (average != null) ...[
                     const SizedBox(height: 4),
@@ -1653,8 +1411,7 @@ class _WeekDrawerLayoutState extends State<_WeekDrawerLayout> {
                       ),
                     )
                   else
-                    for (final note in semaine.notes)
-                      _NoteTile(note: note),
+                    for (final note in semaine.notes) _NoteTile(note: note),
                 ],
               ),
             ),

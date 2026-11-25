@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'devoirs.dart';
 import 'devoirs_notifications.dart';
 import 'edt.dart';
+import 'subjects.dart';
 
 const _moisCourts = [
   'janv.',
@@ -92,6 +93,9 @@ class _DevoirsPageState extends State<DevoirsPage> {
   bool _loading = true;
   bool _notificationsAllowed = true;
   bool _formOpen = false;
+  final TextEditingController _search = TextEditingController();
+  String? _filterMatiere;
+  DevoirType? _filterType;
 
   @override
   void initState() {
@@ -108,6 +112,7 @@ class _DevoirsPageState extends State<DevoirsPage> {
   @override
   void dispose() {
     widget.draftRequest?.removeListener(_onDraftRequest);
+    _search.dispose();
     super.dispose();
   }
 
@@ -192,6 +197,50 @@ class _DevoirsPageState extends State<DevoirsPage> {
     final due = a.echeance.compareTo(b.echeance);
     if (due != 0) return due;
     return a.titre.toLowerCase().compareTo(b.titre.toLowerCase());
+  }
+
+  bool _matchesFilters(Devoir devoir) {
+    final subject = _filterMatiere;
+    if (subject != null && canonicalSubject(devoir.matiere) != subject) {
+      return false;
+    }
+    if (_filterType != null && devoir.type != _filterType) return false;
+    final query = foldText(_search.text);
+    if (query.isEmpty) return true;
+    final haystack = foldText(
+      [
+        devoir.titre,
+        devoir.matiere,
+        devoir.description,
+        for (final task in devoir.sousTaches) task.texte,
+      ].join(' '),
+    );
+    return haystack.contains(query);
+  }
+
+  List<Devoir> get _filteredDevoirs => [
+    for (final devoir in _devoirs)
+      if (_matchesFilters(devoir)) devoir,
+  ];
+
+  List<String> get _subjectOptions {
+    final values = <String>{
+      for (final devoir in _devoirs)
+        if (canonicalSubject(devoir.matiere).isNotEmpty)
+          canonicalSubject(devoir.matiere),
+      for (final matiere in _matieres)
+        if (canonicalSubject(matiere).isNotEmpty) canonicalSubject(matiere),
+    }.toList();
+    values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return values;
+  }
+
+  void _resetFilters() {
+    _search.clear();
+    setState(() {
+      _filterMatiere = null;
+      _filterType = null;
+    });
   }
 
   Future<void> _saveDevoir(Devoir devoir) async {
@@ -377,8 +426,12 @@ class _DevoirsPageState extends State<DevoirsPage> {
                   ],
                   _summary(context),
                   const SizedBox(height: 8),
+                  _filters(context),
+                  const SizedBox(height: 8),
                   if (_devoirs.isEmpty)
                     _emptyState(context)
+                  else if (_filteredDevoirs.isEmpty)
+                    _noMatch(context)
                   else
                     ..._groupedList(context),
                 ],
@@ -504,6 +557,128 @@ class _DevoirsPageState extends State<DevoirsPage> {
     );
   }
 
+  Widget _filters(BuildContext context) {
+    final hasFilters =
+        _filterMatiere != null ||
+        _filterType != null ||
+        _search.text.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: 'Rechercher un devoir',
+            prefixIcon: const Icon(Icons.search),
+            isDense: true,
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Effacer',
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      _search.clear();
+                      setState(() {});
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: const Text('Toutes'),
+                  visualDensity: VisualDensity.compact,
+                  selected: _filterMatiere == null,
+                  onSelected: (_) => setState(() => _filterMatiere = null),
+                ),
+              ),
+              for (final matiere in _subjectOptions)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(matiere),
+                    visualDensity: VisualDensity.compact,
+                    selected: _filterMatiere == matiere,
+                    onSelected: (_) => setState(() => _filterMatiere = matiere),
+                  ),
+                ),
+              PopupMenuButton<String>(
+                tooltip: 'Filtrer par type',
+                onSelected: (value) {
+                  DevoirType? type;
+                  for (final candidate in DevoirType.values) {
+                    if (candidate.name == value) type = candidate;
+                  }
+                  setState(() => _filterType = type);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'all',
+                    child: Text('Tous les types'),
+                  ),
+                  for (final type in DevoirType.values)
+                    PopupMenuItem(value: type.name, child: Text(type.label)),
+                ],
+                child: Chip(
+                  avatar: const Icon(Icons.filter_list, size: 18),
+                  label: Text(_filterType?.label ?? 'Type'),
+                  backgroundColor: _filterType == null
+                      ? null
+                      : Theme.of(context).colorScheme.secondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (hasFilters)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _resetFilters,
+              child: const Text('Réinitialiser les filtres'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _noMatch(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        children: [
+          Icon(Icons.search_off, size: 48, color: cs.onSurfaceVariant),
+          const SizedBox(height: 12),
+          Text(
+            'Aucun devoir ne correspond aux filtres',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _resetFilters,
+            icon: const Icon(Icons.filter_alt_off_outlined),
+            label: const Text('Tout afficher'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _emptyState(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
@@ -550,7 +725,7 @@ class _DevoirsPageState extends State<DevoirsPage> {
     ];
     for (final bucket in order) {
       final items = [
-        for (final devoir in _devoirs)
+        for (final devoir in _filteredDevoirs)
           if (devoir.bucket(now) == bucket) devoir,
       ]..sort(_compareDevoirs);
       if (items.isEmpty) continue;
@@ -876,9 +1051,7 @@ class _DevoirDetailSheet extends StatelessWidget {
                 const Spacer(),
                 Text(
                   '$done/${devoir.sousTaches.length}',
-                  style: tt.labelMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+                  style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
             ),
@@ -888,18 +1061,14 @@ class _DevoirDetailSheet extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 dense: true,
                 leading: Icon(
-                  item.fait
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
+                  item.fait ? Icons.check_circle : Icons.radio_button_unchecked,
                   color: item.fait ? cs.primary : cs.onSurfaceVariant,
                 ),
                 title: Text(
                   item.texte,
                   style: tt.bodyMedium?.copyWith(
                     color: item.fait ? cs.onSurfaceVariant : cs.onSurface,
-                    decoration: item.fait
-                        ? TextDecoration.lineThrough
-                        : null,
+                    decoration: item.fait ? TextDecoration.lineThrough : null,
                   ),
                 ),
               ),
@@ -937,7 +1106,10 @@ class _DevoirDetailRow extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: cs.onSurfaceVariant),
           const SizedBox(width: 10),
-          Text(label, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+          Text(
+            label,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
           const Spacer(),
           Text(value, style: tt.bodyMedium),
         ],
@@ -1491,6 +1663,23 @@ class DevoirSettingsSheetState extends State<DevoirSettingsSheet> {
             onChanged: (value) {
               setState(() {
                 _settings = _settings.copyWith(endOfClassEnabled: value);
+              });
+              if (value && !_allowed) unawaited(_requestPermission());
+            },
+          ),
+          const Divider(),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('Khôlles'),
+            subtitle: Text(
+              'La veille à ${_two(_settings.eveningHour)}h${_two(_settings.eveningMinute)} '
+              'pour les khôlles du lendemain.',
+            ),
+            value: _settings.colleEnabled,
+            onChanged: (value) {
+              setState(() {
+                _settings = _settings.copyWith(colleEnabled: value);
               });
               if (value && !_allowed) unawaited(_requestPermission());
             },

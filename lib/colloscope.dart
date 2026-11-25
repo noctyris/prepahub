@@ -7,11 +7,22 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'api/parse.dart';
+import 'subjects.dart';
 
 const _joursCourts = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const _mois = [
-  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
-  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+  'janv.',
+  'févr.',
+  'mars',
+  'avr.',
+  'mai',
+  'juin',
+  'juil.',
+  'août',
+  'sept.',
+  'oct.',
+  'nov.',
+  'déc.',
 ];
 
 String _two(int n) => n.toString().padLeft(2, '0');
@@ -20,22 +31,71 @@ String _dayMonth(DateTime d) => '${d.day} ${_mois[d.month - 1]}';
 String _fullDate(DateTime d) =>
     '${_joursCourts[d.weekday - 1]} ${_dayMonth(d)} ${d.year}';
 
+String _icsEscape(String value) => value
+    .replaceAll('\\', '\\\\')
+    .replaceAll(';', '\\;')
+    .replaceAll(',', '\\,')
+    .replaceAll('\n', '\\n');
+
+String _icsDate(DateTime d) =>
+    '${d.year}${_two(d.month)}${_two(d.day)}T'
+    '${_two(d.hour)}${_two(d.minute)}00';
+
+String _icsUtc(DateTime d) {
+  final utc = d.toUtc();
+  return '${utc.year}${_two(utc.month)}${_two(utc.day)}T'
+      '${_two(utc.hour)}${_two(utc.minute)}${_two(utc.second)}Z';
+}
+
+/// Construit un calendrier iCalendar des khôlles, importable dans Google
+/// Agenda, Apple Calendrier ou Thunderbird.
+String buildCollesIcs(List<Colle> colles) {
+  final stamp = _icsUtc(DateTime.now());
+  final lines = <String>[
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//PrepaHub//Kholles//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+  for (final colle in colles) {
+    final salle = colle.salle.trim();
+    final prof = colle.prof.trim();
+    lines.addAll([
+      'BEGIN:VEVENT',
+      'UID:${_icsDate(colle.date)}-'
+          '${colle.matiere.replaceAll(RegExp('[^A-Za-z0-9]+'), '-')}@prepahub',
+      'DTSTAMP:$stamp',
+      'DTSTART:${_icsDate(colle.date)}',
+      'DTEND:${_icsDate(colle.date.add(const Duration(hours: 1)))}',
+      'SUMMARY:${_icsEscape('Khôlle – ${colle.matiere}')}',
+      if (salle.isNotEmpty) 'LOCATION:${_icsEscape(salle)}',
+      if (prof.isNotEmpty) 'DESCRIPTION:${_icsEscape('Professeur : $prof')}',
+      'END:VEVENT',
+    ]);
+  }
+  lines.add('END:VCALENDAR');
+  return '${lines.join('\r\n')}\r\n';
+}
+
+enum _CollePeriod { upcoming, all, past }
+
 DateTime _monday(DateTime d) =>
     DateTime(d.year, d.month, d.day - (d.weekday - 1));
 
 Map<String, dynamic> _toJson(Colle c) => {
-      'matiere': c.matiere,
-      'date': c.date.toIso8601String(),
-      'prof': c.prof,
-      'salle': c.salle,
-    };
+  'matiere': c.matiere,
+  'date': c.date.toIso8601String(),
+  'prof': c.prof,
+  'salle': c.salle,
+};
 
 Colle _fromJson(Map<String, dynamic> j) => Colle(
-      matiere: j['matiere'] as String,
-      date: DateTime.parse(j['date'] as String),
-      prof: (j['prof'] as String?) ?? '',
-      salle: (j['salle'] as String?) ?? '',
-    );
+  matiere: j['matiere'] as String,
+  date: DateTime.parse(j['date'] as String),
+  prof: (j['prof'] as String?) ?? '',
+  salle: (j['salle'] as String?) ?? '',
+);
 
 class ColloscopeStore {
   static Future<File> _file() async {
@@ -59,8 +119,9 @@ class ColloscopeStore {
     }
   }
 
-  static String encode(List<Colle> colles) => const JsonEncoder.withIndent('  ')
-      .convert([for (final c in colles) _toJson(c)]);
+  static String encode(List<Colle> colles) =>
+      const JsonEncoder.withIndent('  ')
+          .convert([for (final c in colles) _toJson(c)]);
 
   static List<Colle> decode(String raw) {
     final data = jsonDecode(raw) as List;
@@ -79,7 +140,9 @@ class ColloscopeStore {
 }
 
 class ColloscopePage extends StatefulWidget {
-  const ColloscopePage({super.key});
+  final VoidCallback? onChanged;
+
+  const ColloscopePage({super.key, this.onChanged});
 
   @override
   State<ColloscopePage> createState() => _ColloscopePageState();
@@ -87,11 +150,20 @@ class ColloscopePage extends StatefulWidget {
 
 class _ColloscopePageState extends State<ColloscopePage> {
   List<Colle>? _colles;
+  final TextEditingController _search = TextEditingController();
+  _CollePeriod _period = _CollePeriod.upcoming;
+  String? _filterMatiere;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   List<Colle> _sorted(List<Colle> l) =>
@@ -118,6 +190,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
     setState(() => _colles = _sorted(next));
     try {
       await ColloscopeStore.save(_colles!);
+      widget.onChanged?.call();
     } catch (_) {
       if (mounted) _snack("Impossible d'enregistrer les khôlles");
     }
@@ -142,6 +215,25 @@ class _ColloscopePageState extends State<ColloscopePage> {
     }
   }
 
+  Future<void> _exportIcs() async {
+    final colles = _colles ?? [];
+    if (colles.isEmpty) {
+      _snack('Rien à exporter');
+      return;
+    }
+    try {
+      final uri = await FilePicker.saveFile(
+        dialogTitle: 'Exporter le calendrier des khôlles',
+        fileName: 'kholles.ics',
+        mimeType: 'text/calendar',
+        bytes: Uint8List.fromList(utf8.encode(buildCollesIcs(colles))),
+      );
+      if (uri != null && mounted) _snack('Calendrier exporté');
+    } catch (_) {
+      if (mounted) _snack('Export impossible');
+    }
+  }
+
   Future<void> _import() async {
     try {
       final file = await FilePicker.pickFile(
@@ -155,8 +247,7 @@ class _ColloscopePageState extends State<ColloscopePage> {
       );
 
       final current = [..._colles ?? <Colle>[]];
-      bool same(Colle a, Colle b) =>
-          a.matiere == b.matiere && a.date == b.date;
+      bool same(Colle a, Colle b) => a.matiere == b.matiere && a.date == b.date;
       var added = 0;
       for (final c in incoming) {
         if (!current.any((x) => same(x, c))) {
@@ -166,9 +257,11 @@ class _ColloscopePageState extends State<ColloscopePage> {
       }
       await _commit(current);
       if (mounted) {
-        _snack(added == 0
-            ? 'Aucune nouvelle khôlle'
-            : '$added khôlle${added > 1 ? 's' : ''} importée${added > 1 ? 's' : ''}');
+        _snack(
+          added == 0
+              ? 'Aucune nouvelle khôlle'
+              : '$added khôlle${added > 1 ? 's' : ''} importée${added > 1 ? 's' : ''}',
+        );
       }
     } catch (_) {
       if (mounted) _snack('Fichier invalide');
@@ -221,9 +314,120 @@ class _ColloscopePageState extends State<ColloscopePage> {
     ];
   }
 
+  List<String> get _subjectOptions {
+    final values = <String>{
+      for (final colle in _colles ?? const <Colle>[])
+        if (canonicalSubject(colle.matiere).isNotEmpty)
+          canonicalSubject(colle.matiere),
+    }.toList();
+    values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return values;
+  }
+
+  List<Colle> _filtered(List<Colle> colles) {
+    final query = foldText(_search.text);
+    return [
+      for (final colle in colles)
+        if ((_filterMatiere == null ||
+                canonicalSubject(colle.matiere) == _filterMatiere) &&
+            (query.isEmpty ||
+                foldText('${colle.matiere} ${colle.prof} ${colle.salle}')
+                    .contains(query)))
+          colle,
+    ];
+  }
+
+  Widget _filters(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: 'Rechercher une khôlle',
+            prefixIcon: const Icon(Icons.search),
+            isDense: true,
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Effacer',
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      _search.clear();
+                      setState(() {});
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SegmentedButton<_CollePeriod>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: const [
+            ButtonSegment(value: _CollePeriod.upcoming, label: Text('À venir')),
+            ButtonSegment(value: _CollePeriod.all, label: Text('Toutes')),
+            ButtonSegment(value: _CollePeriod.past, label: Text('Passées')),
+          ],
+          selected: {_period},
+          onSelectionChanged: (selection) =>
+              setState(() => _period = selection.first),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: const Text('Toutes les matières'),
+                  visualDensity: VisualDensity.compact,
+                  selected: _filterMatiere == null,
+                  onSelected: (_) => setState(() => _filterMatiere = null),
+                ),
+              ),
+              for (final subject in _subjectOptions)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(subject),
+                    visualDensity: VisualDensity.compact,
+                    selected: _filterMatiere == subject,
+                    onSelected: (_) => setState(() => _filterMatiere = subject),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (_filterMatiere != null || _search.text.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {
+                _search.clear();
+                setState(() => _filterMatiere = null);
+              },
+              style: TextButton.styleFrom(foregroundColor: cs.onSurfaceVariant),
+              child: const Text('Réinitialiser les filtres'),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colles = _colles;
+    final visible = colles == null ? const <Colle>[] : _filtered(colles);
+    final content = visible.isEmpty ? const <Widget>[] : _content(visible);
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
@@ -237,13 +441,29 @@ class _ColloscopePageState extends State<ColloscopePage> {
             actions: [
               PopupMenuButton<String>(
                 tooltip: 'Plus',
-                onSelected: (v) => v == 'export' ? _export() : _import(),
+                onSelected: (v) {
+                  if (v == 'export') {
+                    _export();
+                  } else if (v == 'ics') {
+                    _exportIcs();
+                  } else {
+                    _import();
+                  }
+                },
                 itemBuilder: (_) => const [
                   PopupMenuItem(
                     value: 'export',
                     child: ListTile(
                       leading: Icon(Icons.upload_file_outlined),
-                      title: Text('Exporter'),
+                      title: Text('Exporter en JSON'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'ics',
+                    child: ListTile(
+                      leading: Icon(Icons.event_available_outlined),
+                      title: Text('Exporter en calendrier (.ics)'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -266,11 +486,29 @@ class _ColloscopePageState extends State<ColloscopePage> {
             )
           else if (colles.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: _Empty())
-          else
+          else ...[
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-              sliver: SliverList.list(children: _content(colles)),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              sliver: SliverToBoxAdapter(child: _filters(context)),
             ),
+            if (content.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    'Aucune khôlle dans cette vue',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                sliver: SliverList.list(children: content),
+              ),
+          ],
         ],
       ),
     );
@@ -278,18 +516,19 @@ class _ColloscopePageState extends State<ColloscopePage> {
 
   List<Widget> _content(List<Colle> colles) {
     final now = DateTime.now();
-    final weeks = _weeks(colles);
-    final upcoming = [
-      for (final w in weeks)
-        if (w.colles.any((c) => !c.date.isBefore(now))) w,
+    final upcomingColles = [
+      for (final c in colles)
+        if (!c.date.isBefore(now)) c,
     ];
-    final past = [
-      for (final w in weeks)
-        if (w.colles.every((c) => c.date.isBefore(now))) w,
-    ].reversed.toList();
+    final pastColles = [
+      for (final c in colles)
+        if (c.date.isBefore(now)) c,
+    ];
+    final upcomingWeeks = _weeks(upcomingColles);
+    final pastWeeks = _weeks(pastColles).reversed.toList();
 
     Colle? next;
-    for (final c in colles) {
+    for (final c in upcomingColles) {
       if (!c.date.isBefore(now)) {
         next = c;
         break;
@@ -297,26 +536,49 @@ class _ColloscopePageState extends State<ColloscopePage> {
     }
 
     Widget section(SemaineColles w) => _WeekSection(
-          week: w,
-          now: now,
-          next: next,
-          onTap: _edit,
-          onDelete: _delete,
-        );
+      week: w,
+      now: now,
+      next: next,
+      onTap: _edit,
+      onDelete: _delete,
+    );
 
-    return [
-      for (final w in upcoming) section(w),
-      if (past.isNotEmpty)
-        ExpansionTile(
-          shape: const Border(),
-          collapsedShape: const Border(),
-          title: const Text('Khôlles passées'),
-          subtitle: Text(
-              '${past.fold<int>(0, (n, w) => n + w.colles.length)} au total'),
-          childrenPadding: const EdgeInsets.only(top: 8),
-          children: [for (final w in past) section(w)],
-        ),
-    ];
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    switch (_period) {
+      case _CollePeriod.past:
+        return [for (final w in pastWeeks) section(w)];
+      case _CollePeriod.all:
+        return [
+          for (final w in upcomingWeeks) section(w),
+          if (pastWeeks.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+              child: Text(
+                'Khôlles passées',
+                style: tt.titleSmall?.copyWith(color: cs.primary),
+              ),
+            ),
+            for (final w in pastWeeks) section(w),
+          ],
+        ];
+      case _CollePeriod.upcoming:
+        return [
+          for (final w in upcomingWeeks) section(w),
+          if (pastWeeks.isNotEmpty)
+            ExpansionTile(
+              shape: const Border(),
+              collapsedShape: const Border(),
+              title: const Text('Khôlles passées'),
+              subtitle: Text(
+                '${pastWeeks.fold<int>(0, (n, w) => n + w.colles.length)} '
+                'au total',
+              ),
+              childrenPadding: const EdgeInsets.only(top: 8),
+              children: [for (final w in pastWeeks) section(w)],
+            ),
+        ];
+    }
   }
 }
 
@@ -386,9 +648,10 @@ class _WeekSection extends StatelessWidget {
                   ),
                 ),
                 if (thisWeek)
-                  Text('Cette semaine',
-                      style: tt.labelMedium
-                          ?.copyWith(color: cs.onSurfaceVariant)),
+                  Text(
+                    'Cette semaine',
+                    style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+                  ),
               ],
             ),
           ),
@@ -481,22 +744,29 @@ class _ColleTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(_joursCourts[d.weekday - 1],
-                  style: tt.labelSmall?.copyWith(color: badgeFg, height: 1.1)),
-              Text('${d.day}',
-                  style: tt.titleMedium?.copyWith(color: badgeFg, height: 1.1)),
+              Text(
+                _joursCourts[d.weekday - 1],
+                style: tt.labelSmall?.copyWith(color: badgeFg, height: 1.1),
+              ),
+              Text(
+                '${d.day}',
+                style: tt.titleMedium?.copyWith(color: badgeFg, height: 1.1),
+              ),
             ],
           ),
         ),
         title: Text(
           colle.matiere,
-          style: tt.titleMedium
-              ?.copyWith(color: isPast ? cs.onSurfaceVariant : null),
+          style: tt.titleMedium?.copyWith(
+            color: isPast ? cs.onSurfaceVariant : null,
+          ),
         ),
         subtitle: Text(details),
         trailing: isNext
-            ? Text('Prochaine',
-                style: tt.labelMedium?.copyWith(color: cs.primary))
+            ? Text(
+                'Prochaine',
+                style: tt.labelMedium?.copyWith(color: cs.primary),
+              )
             : null,
       ),
     );
@@ -549,7 +819,9 @@ class _ColleFormState extends State<_ColleForm> {
       confirmText: 'OK',
     );
     if (d == null || !mounted) return;
-    setState(() => _date = DateTime(d.year, d.month, d.day, _date.hour, _date.minute));
+    setState(
+      () => _date = DateTime(d.year, d.month, d.day, _date.hour, _date.minute),
+    );
   }
 
   Future<void> _pickTime() async {
@@ -565,7 +837,15 @@ class _ColleFormState extends State<_ColleForm> {
       ),
     );
     if (t == null || !mounted) return;
-    setState(() => _date = DateTime(_date.year, _date.month, _date.day, t.hour, t.minute));
+    setState(
+      () => _date = DateTime(
+        _date.year,
+        _date.month,
+        _date.day,
+        t.hour,
+        t.minute,
+      ),
+    );
   }
 
   void _submit() {
@@ -593,13 +873,19 @@ class _ColleFormState extends State<_ColleForm> {
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-          24, 0, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+        24,
+        0,
+        24,
+        24 + MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(editing ? 'Modifier la khôlle' : 'Nouvelle khôlle',
-              style: tt.headlineSmall),
+          Text(
+            editing ? 'Modifier la khôlle' : 'Nouvelle khôlle',
+            style: tt.headlineSmall,
+          ),
           const SizedBox(height: 20),
           TextField(
             controller: _matiere,

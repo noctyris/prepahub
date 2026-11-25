@@ -9,11 +9,17 @@ Réalisée avec [Flutter](https://flutter.dev) (Dart), avec support Material You
 ## Fonctionnalités
 
 * Connexion au portail PRÉPA+ de ton lycée (URL personnalisable)
+* Écran « Aujourd'hui » : cours, devoirs, khôlles et dernières notes en un coup d'œil
 * Notes affichées semaine par semaine (matière, note, professeur, classement, moyenne, écart-type)
-* Session persistante : l'application se reconnecte automatiquement au lancement (identifiants stockés localement sur l'appareil)
+* Regroupement des TD, TP et cours sous une même matière
+* Moyenne pondérée avec coefficients par matière, simulateur de note et courbes séparées par matière (couleurs de l'emploi du temps)
+* Recherche et filtres pour les notes, les devoirs et les khôlles (à venir, passées ou toutes)
+* Session persistante : l'application se reconnecte automatiquement au lancement (identifiants stockés dans le trousseau de la plateforme)
+* Verrouillage biométrique optionnel
 * Notes mises en cache sur l'appareil et consultables hors ligne
 * Ajout local d'une note en attendant sa publication sur le portail
-* Notification optionnelle lorsqu'une actualisation détecte de nouvelles notes
+* Notification optionnelle lorsqu'une actualisation détecte de nouvelles notes, et actualisation automatique pendant que l'application tourne
+* Rappel des khôlles la veille et export au format calendrier (.ics)
 * Material You : s'adapte à la palette de ton système sur Android 12+
 * Disponible sur Android et desktop (Linux, Windows et macOS)
 
@@ -61,7 +67,7 @@ L'APK est généré dans `build/app/outputs/flutter-apk/`.
 
 ## Sécurité
 
-Les identifiants sont stockés dans le répertoire privé de l'application (SharedPreferences) et ne sont jamais envoyés ailleurs qu'au serveur du portail que tu as configuré.
+Les identifiants sont stockés dans le stockage sécurisé de la plateforme (Keystore Android, trousseau iOS/macOS, Credential Locker Windows, libsecret sous Linux). Si ce stockage est indisponible, l'application se replie sur ses SharedPreferences privées pour ne pas bloquer la connexion. Ils ne sont jamais envoyés ailleurs qu'au serveur du portail que tu as configuré. Le verrouillage optionnel utilise la biométrie ou l'authentification système de l'appareil.
 
 ## Licence
 

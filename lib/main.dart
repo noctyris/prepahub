@@ -5,13 +5,16 @@ import 'package:flutter/foundation.dart' show ValueNotifier, kReleaseMode;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'app_lock.dart';
 import 'app_settings.dart';
 import 'devoirs.dart';
 import 'devoirs_notifications.dart';
 import 'devoirs_page.dart';
 import 'notes.dart';
 import 'edt.dart';
+import 'notes_store.dart';
 import 'settings_page.dart';
+import 'today_page.dart';
 import 'update.dart';
 
 Future<void> main() async {
@@ -91,10 +94,15 @@ class _PrepaHubAppState extends State<PrepaHubApp> {
           theme: _theme(light),
           darkTheme: _theme(dark, amoled: _settings.amoledBlack),
           themeMode: _settings.themeMode,
-          home: RootPage(
-            settings: _settings,
-            onSettingsChanged: _updateSettings,
-            dynamicColorAvailable: dynamicColorAvailable,
+          home: AppLockGate(
+            enabled: _settings.appLock,
+            onDisable: () =>
+                _updateSettings(_settings.copyWith(appLock: false)),
+            child: RootPage(
+              settings: _settings,
+              onSettingsChanged: _updateSettings,
+              dynamicColorAvailable: dynamicColorAvailable,
+            ),
           ),
         );
       },
@@ -118,9 +126,11 @@ class RootPage extends StatefulWidget {
   State<RootPage> createState() => _RootPageState();
 }
 
-class _RootPageState extends State<RootPage> {
+class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
   late AppSection _current;
   Timer? _updateTimer;
+  Timer? _refreshTimer;
+  DateTime? _lastAutoRefresh;
   final ValueNotifier<DevoirDraft?> _devoirDraftRequest =
       ValueNotifier<DevoirDraft?>(null);
 
@@ -138,9 +148,19 @@ class _RootPageState extends State<RootPage> {
       }
     }
     devoirNotificationTap.addListener(_handleDevoirNotification);
+    colleNotificationTap.addListener(_handleColleNotification);
+    WidgetsBinding.instance.addObserver(this);
+    _configureAutoRefresh();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(DevoirNotifications.instance.sync());
+      if (!mounted) return;
+      unawaited(DevoirNotifications.instance.sync());
+      if (widget.settings.autoRefresh &&
+          widget.settings.startSection != AppSection.notes) {
+        unawaited(_autoRefresh());
+      } else {
+        _lastAutoRefresh = DateTime.now();
+      }
     });
 
     if (kReleaseMode) {
@@ -151,9 +171,54 @@ class _RootPageState extends State<RootPage> {
   @override
   void dispose() {
     devoirNotificationTap.removeListener(_handleDevoirNotification);
+    colleNotificationTap.removeListener(_handleColleNotification);
+    WidgetsBinding.instance.removeObserver(this);
     _devoirDraftRequest.dispose();
     _updateTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _handleColleNotification() {
+    if (colleNotificationTap.value != true) return;
+    colleNotificationTap.value = false;
+    if (!mounted) return;
+    final target = widget.settings.isAvailable(AppSection.planning)
+        ? AppSection.planning
+        : AppSection.devoirs;
+    if (!widget.settings.isAvailable(target)) return;
+    setState(() => _current = target);
+  }
+
+  void _configureAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    if (!widget.settings.autoRefresh) return;
+    _refreshTimer = Timer.periodic(const Duration(minutes: 30), (_) {
+      unawaited(_autoRefresh());
+    });
+  }
+
+  Future<void> _autoRefresh() async {
+    _lastAutoRefresh = DateTime.now();
+    await refreshNotesInBackground(notify: widget.settings.notifyNewGrades);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !widget.settings.autoRefresh) {
+      return;
+    }
+    final last = _lastAutoRefresh;
+    if (last == null ||
+        DateTime.now().difference(last) >= const Duration(minutes: 5)) {
+      unawaited(_autoRefresh());
+    }
+  }
+
+  void _openSection(AppSection section) {
+    if (!widget.settings.isAvailable(section)) return;
+    setState(() => _current = section);
   }
 
   void _handleDevoirNotification() {
@@ -182,6 +247,10 @@ class _RootPageState extends State<RootPage> {
     super.didUpdateWidget(oldWidget);
     if (!widget.settings.isAvailable(_current)) {
       _current = widget.settings.startSection;
+    }
+    if (oldWidget.settings.autoRefresh != widget.settings.autoRefresh) {
+      _configureAutoRefresh();
+      if (widget.settings.autoRefresh) unawaited(_autoRefresh());
     }
   }
 
@@ -243,13 +312,11 @@ class _RootPageState extends State<RootPage> {
               label: section.label,
             ),
           if (settings.navMenu.isNotEmpty)
-            const NavigationDestination(
-              icon: Icon(Icons.menu),
-              label: 'Menu',
-            ),
+            const NavigationDestination(icon: Icon(Icons.menu), label: 'Menu'),
         ],
       ),
       body: switch (_current) {
+        AppSection.today => TodayPage(onOpenSection: _openSection),
         AppSection.notes => NotesPage(
           layout: settings.notesLayout,
           notifyNewGrades: settings.notifyNewGrades,

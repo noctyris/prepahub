@@ -1,10 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppSection { notes, planning, devoirs, settings }
+enum AppSection { today, notes, planning, devoirs, settings }
 
 extension AppSectionInfo on AppSection {
   String get label => switch (this) {
+    AppSection.today => "Aujourd'hui",
     AppSection.notes => 'Notes',
     AppSection.planning => 'Planning',
     AppSection.devoirs => 'Devoirs',
@@ -12,6 +13,7 @@ extension AppSectionInfo on AppSection {
   };
 
   IconData get icon => switch (this) {
+    AppSection.today => Icons.today_outlined,
     AppSection.notes => Icons.pie_chart_outline,
     AppSection.planning => Icons.calendar_month_outlined,
     AppSection.devoirs => Icons.checklist,
@@ -19,6 +21,7 @@ extension AppSectionInfo on AppSection {
   };
 
   IconData get selectedIcon => switch (this) {
+    AppSection.today => Icons.today,
     AppSection.notes => Icons.pie_chart,
     AppSection.planning => Icons.calendar_month,
     AppSection.devoirs => Icons.checklist,
@@ -74,6 +77,8 @@ class AppSettings {
   final bool amoledBlack;
   final NotesLayout notesLayout;
   final bool notifyNewGrades;
+  final bool autoRefresh;
+  final bool appLock;
   final List<AppSection> navBar;
   final List<AppSection> navMenu;
   final AppSection startSection;
@@ -84,14 +89,17 @@ class AppSettings {
     required this.amoledBlack,
     this.notesLayout = NotesLayout.cards,
     this.notifyNewGrades = true,
+    this.autoRefresh = true,
+    this.appLock = false,
     this.navBar = const [
+      AppSection.today,
       AppSection.notes,
       AppSection.planning,
       AppSection.devoirs,
       AppSection.settings,
     ],
     this.navMenu = const [],
-    this.startSection = AppSection.notes,
+    this.startSection = AppSection.today,
   });
 
   static const defaults = AppSettings(
@@ -114,6 +122,8 @@ class AppSettings {
     bool? amoledBlack,
     NotesLayout? notesLayout,
     bool? notifyNewGrades,
+    bool? autoRefresh,
+    bool? appLock,
     List<AppSection>? navBar,
     List<AppSection>? navMenu,
     AppSection? startSection,
@@ -123,6 +133,8 @@ class AppSettings {
     amoledBlack: amoledBlack ?? this.amoledBlack,
     notesLayout: notesLayout ?? this.notesLayout,
     notifyNewGrades: notifyNewGrades ?? this.notifyNewGrades,
+    autoRefresh: autoRefresh ?? this.autoRefresh,
+    appLock: appLock ?? this.appLock,
     navBar: navBar ?? this.navBar,
     navMenu: navMenu ?? this.navMenu,
     startSection: startSection ?? this.startSection,
@@ -160,6 +172,8 @@ class AppSettings {
       amoledBlack: amoledBlack,
       notesLayout: notesLayout,
       notifyNewGrades: notifyNewGrades,
+      autoRefresh: autoRefresh,
+      appLock: appLock,
       navBar: List.unmodifiable(bar),
       navMenu: List.unmodifiable(menu),
       startSection: start,
@@ -173,6 +187,9 @@ class AppSettingsStore {
   static const _amoledBlackKey = 'app_amoled_black';
   static const _notesLayoutKey = 'app_notes_layout';
   static const _notifyNewGradesKey = 'app_notify_new_grades';
+  static const _autoRefreshKey = 'app_auto_refresh';
+  static const _appLockKey = 'app_lock';
+  static const _navTodayMigrationKey = 'app_nav_today_migrated';
   static const _navBarKey = 'app_nav_bar';
   static const _navMenuKey = 'app_nav_menu';
   static const _startSectionKey = 'app_start_section';
@@ -180,6 +197,19 @@ class AppSettingsStore {
   static Future<AppSettings> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      var navBar =
+          _sectionsFrom(prefs.getStringList(_navBarKey)) ??
+          AppSettings.defaults.navBar;
+      var navMenu =
+          _sectionsFrom(prefs.getStringList(_navMenuKey)) ??
+          AppSettings.defaults.navMenu;
+      if (!(prefs.getBool(_navTodayMigrationKey) ?? false)) {
+        if (!navBar.contains(AppSection.today) &&
+            !navMenu.contains(AppSection.today)) {
+          navBar = [AppSection.today, ...navBar];
+        }
+        await prefs.setBool(_navTodayMigrationKey, true);
+      }
       return AppSettings(
         themeMode: _themeModeFrom(prefs.getString(_themeModeKey)),
         dynamicColor:
@@ -191,12 +221,11 @@ class AppSettingsStore {
         notifyNewGrades:
             prefs.getBool(_notifyNewGradesKey) ??
             AppSettings.defaults.notifyNewGrades,
-        navBar:
-            _sectionsFrom(prefs.getStringList(_navBarKey)) ??
-            AppSettings.defaults.navBar,
-        navMenu:
-            _sectionsFrom(prefs.getStringList(_navMenuKey)) ??
-            AppSettings.defaults.navMenu,
+        autoRefresh:
+            prefs.getBool(_autoRefreshKey) ?? AppSettings.defaults.autoRefresh,
+        appLock: prefs.getBool(_appLockKey) ?? AppSettings.defaults.appLock,
+        navBar: navBar,
+        navMenu: navMenu,
         startSection:
             _sectionFrom(prefs.getString(_startSectionKey)) ??
             AppSettings.defaults.startSection,
@@ -213,6 +242,8 @@ class AppSettingsStore {
     await prefs.setBool(_amoledBlackKey, settings.amoledBlack);
     await prefs.setString(_notesLayoutKey, settings.notesLayout.name);
     await prefs.setBool(_notifyNewGradesKey, settings.notifyNewGrades);
+    await prefs.setBool(_autoRefreshKey, settings.autoRefresh);
+    await prefs.setBool(_appLockKey, settings.appLock);
     await prefs.setStringList(_navBarKey, [
       for (final section in settings.navBar) section.name,
     ]);
