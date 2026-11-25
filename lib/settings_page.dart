@@ -135,6 +135,30 @@ class _SettingsPageState extends State<SettingsPage> {
     await _update(settings.copyWith(startSection: picked));
   }
 
+  Future<void> _chooseNotesLayout() async {
+    final settings = widget.settings;
+    final picked = await showDialog<NotesLayout>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Disposition des notes'),
+        children: [
+          for (final layout in NotesLayout.values)
+            ListTile(
+              leading: Icon(layout.icon),
+              title: Text(layout.label),
+              subtitle: Text(layout.description),
+              trailing: settings.notesLayout == layout
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, layout),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted || picked == settings.notesLayout) return;
+    await _update(settings.copyWith(notesLayout: picked));
+  }
+
   Future<void> _openNavigation() async {
     final next = await Navigator.of(context).push<AppSettings>(
       MaterialPageRoute(
@@ -261,6 +285,22 @@ class _SettingsPageState extends State<SettingsPage> {
                       unawaited(_update(settings.copyWith(amoledBlack: value))),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _sectionTitle(context, 'Notes'),
+          Card.filled(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              leading: Icon(settings.notesLayout.icon),
+              title: const Text('Disposition des notes'),
+              subtitle: Text(
+                '${settings.notesLayout.label} · '
+                '${settings.notesLayout.description}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _chooseNotesLayout,
             ),
           ),
           const SizedBox(height: 24),

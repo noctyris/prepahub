@@ -16,6 +16,7 @@ void main() {
     expect(settings.themeMode, ThemeMode.system);
     expect(settings.dynamicColor, isTrue);
     expect(settings.amoledBlack, isFalse);
+    expect(settings.notesLayout, NotesLayout.cards);
   });
 
   test('conserve les réglages enregistrés', () async {
@@ -23,6 +24,7 @@ void main() {
       themeMode: ThemeMode.dark,
       dynamicColor: false,
       amoledBlack: true,
+      notesLayout: NotesLayout.grid,
     );
 
     await AppSettingsStore.save(settings);
@@ -31,5 +33,6 @@ void main() {
     expect(loaded.themeMode, ThemeMode.dark);
     expect(loaded.dynamicColor, isFalse);
     expect(loaded.amoledBlack, isTrue);
+    expect(loaded.notesLayout, NotesLayout.grid);
   });
 }

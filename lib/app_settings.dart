@@ -42,10 +42,37 @@ extension SectionPlacementInfo on SectionPlacement {
   };
 }
 
+enum NotesLayout { cards, grid, list, drawers }
+
+extension NotesLayoutInfo on NotesLayout {
+  String get label => switch (this) {
+    NotesLayout.cards => 'Cartes',
+    NotesLayout.grid => 'Grille',
+    NotesLayout.list => 'Liste',
+    NotesLayout.drawers => 'Tiroirs',
+  };
+
+  String get description => switch (this) {
+    NotesLayout.cards => 'Une carte par semaine, à déplier.',
+    NotesLayout.grid => 'Deux semaines par ligne, avec un aperçu des notes.',
+    NotesLayout.list => 'Toutes les notes à plat, sans dépliage.',
+    NotesLayout.drawers =>
+      'Une réglette de semaines et les notes de celle choisie.',
+  };
+
+  IconData get icon => switch (this) {
+    NotesLayout.cards => Icons.view_agenda_outlined,
+    NotesLayout.grid => Icons.grid_view_outlined,
+    NotesLayout.list => Icons.view_list_outlined,
+    NotesLayout.drawers => Icons.vertical_split_outlined,
+  };
+}
+
 class AppSettings {
   final ThemeMode themeMode;
   final bool dynamicColor;
   final bool amoledBlack;
+  final NotesLayout notesLayout;
   final List<AppSection> navBar;
   final List<AppSection> navMenu;
   final AppSection startSection;
@@ -54,6 +81,7 @@ class AppSettings {
     required this.themeMode,
     required this.dynamicColor,
     required this.amoledBlack,
+    this.notesLayout = NotesLayout.cards,
     this.navBar = const [
       AppSection.notes,
       AppSection.planning,
@@ -82,6 +110,7 @@ class AppSettings {
     ThemeMode? themeMode,
     bool? dynamicColor,
     bool? amoledBlack,
+    NotesLayout? notesLayout,
     List<AppSection>? navBar,
     List<AppSection>? navMenu,
     AppSection? startSection,
@@ -89,6 +118,7 @@ class AppSettings {
     themeMode: themeMode ?? this.themeMode,
     dynamicColor: dynamicColor ?? this.dynamicColor,
     amoledBlack: amoledBlack ?? this.amoledBlack,
+    notesLayout: notesLayout ?? this.notesLayout,
     navBar: navBar ?? this.navBar,
     navMenu: navMenu ?? this.navMenu,
     startSection: startSection ?? this.startSection,
@@ -124,6 +154,7 @@ class AppSettings {
       themeMode: themeMode,
       dynamicColor: dynamicColor,
       amoledBlack: amoledBlack,
+      notesLayout: notesLayout,
       navBar: List.unmodifiable(bar),
       navMenu: List.unmodifiable(menu),
       startSection: start,
@@ -135,6 +166,7 @@ class AppSettingsStore {
   static const _themeModeKey = 'app_theme_mode';
   static const _dynamicColorKey = 'app_dynamic_color';
   static const _amoledBlackKey = 'app_amoled_black';
+  static const _notesLayoutKey = 'app_notes_layout';
   static const _navBarKey = 'app_nav_bar';
   static const _navMenuKey = 'app_nav_menu';
   static const _startSectionKey = 'app_start_section';
@@ -149,6 +181,7 @@ class AppSettingsStore {
             AppSettings.defaults.dynamicColor,
         amoledBlack:
             prefs.getBool(_amoledBlackKey) ?? AppSettings.defaults.amoledBlack,
+        notesLayout: _notesLayoutFrom(prefs.getString(_notesLayoutKey)),
         navBar:
             _sectionsFrom(prefs.getStringList(_navBarKey)) ??
             AppSettings.defaults.navBar,
@@ -169,6 +202,7 @@ class AppSettingsStore {
     await prefs.setString(_themeModeKey, settings.themeMode.name);
     await prefs.setBool(_dynamicColorKey, settings.dynamicColor);
     await prefs.setBool(_amoledBlackKey, settings.amoledBlack);
+    await prefs.setString(_notesLayoutKey, settings.notesLayout.name);
     await prefs.setStringList(_navBarKey, [
       for (final section in settings.navBar) section.name,
     ]);
@@ -192,6 +226,13 @@ class AppSettingsStore {
       if (section.name == value) return section;
     }
     return null;
+  }
+
+  static NotesLayout _notesLayoutFrom(String? value) {
+    for (final layout in NotesLayout.values) {
+      if (layout.name == value) return layout;
+    }
+    return AppSettings.defaults.notesLayout;
   }
 
   static ThemeMode _themeModeFrom(String? value) {

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'app_settings.dart';
 import 'api/client.dart';
 import 'api/parse.dart';
 import 'login.dart';
@@ -12,11 +13,32 @@ String _fmt(double? v) {
       .replaceAll('.', ',');
 }
 
-class NotesPage extends StatefulWidget {
-    const NotesPage({super.key});
+String _weekTitle(Semaine semaine) => 'Semaine ${semaine.numero ?? '?'}';
 
-    @override
-    State<NotesPage> createState() => _NotesPageState();
+String _weekDates(Semaine semaine) =>
+    semaine.fin.isEmpty ? semaine.debut : '${semaine.debut} → ${semaine.fin}';
+
+double? _weekAverage(Semaine semaine) {
+  final values = [
+    for (final note in semaine.notes)
+      if (note.note != null) note.note!,
+  ];
+  if (values.isEmpty) return null;
+  return values.reduce((a, b) => a + b) / values.length;
+}
+
+Color _noteColor(Note note, ColorScheme cs) {
+  if (note.note == null || note.moyenne == null) return cs.onSurface;
+  return note.note! >= note.moyenne! ? cs.primary : cs.error;
+}
+
+class NotesPage extends StatefulWidget {
+  final NotesLayout layout;
+
+  const NotesPage({super.key, this.layout = NotesLayout.cards});
+
+  @override
+  State<NotesPage> createState() => _NotesPageState();
 }
 
 class _NotesPageState extends State<NotesPage> {
@@ -120,6 +142,118 @@ class _NotesPageState extends State<NotesPage> {
     });
   }
 
+  List<Widget> _weekSlivers(List<Semaine> semaines) {
+    switch (widget.layout) {
+      case NotesLayout.cards:
+        return [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverList.separated(
+              itemCount: semaines.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => _SemaineCard(
+                key: ValueKey(i),
+                semaine: semaines[i],
+                expanded: i == semaines.length - 1,
+              ),
+            ),
+          ),
+        ];
+      case NotesLayout.grid:
+        return [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverGrid.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                mainAxisExtent: 168,
+              ),
+              itemCount: semaines.length,
+              itemBuilder: (context, i) => _SemaineGridCard(
+                semaine: semaines[i],
+                onTap: () => _showWeek(semaines[i]),
+              ),
+            ),
+          ),
+        ];
+      case NotesLayout.list:
+        return [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverList.builder(
+              itemCount: semaines.length,
+              itemBuilder: (context, i) => _SemaineSection(
+                semaine: semaines[i],
+                showDivider: i < semaines.length - 1,
+              ),
+            ),
+          ),
+        ];
+      case NotesLayout.drawers:
+        return [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverToBoxAdapter(
+              child: _WeekDrawerLayout(semaines: semaines),
+            ),
+          ),
+        ];
+    }
+  }
+
+  void _showWeek(Semaine semaine) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final tt = Theme.of(ctx).textTheme;
+        final n = semaine.notes.length;
+        final maxHeight = MediaQuery.sizeOf(ctx).height * 0.7;
+        final height = (120 + n * 92.0).clamp(220.0, maxHeight).toDouble();
+        return SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(_weekTitle(semaine), style: tt.titleLarge),
+                const SizedBox(height: 2),
+                Text(
+                  '${_weekDates(semaine)} · $n note${n > 1 ? 's' : ''}',
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+                const Divider(height: 20),
+                Expanded(
+                  child: n == 0
+                      ? Center(
+                          child: Text(
+                            'Pas de note cette semaine',
+                            style: tt.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      : ListView(
+                          children: [
+                            for (final note in semaine.notes)
+                              _NoteTile(note: note),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) return const _NotesSkeleton();
@@ -153,18 +287,7 @@ class _NotesPageState extends State<NotesPage> {
                     child: Center(child: Text('Aucune note pour le moment')),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    sliver: SliverList.separated(
-                      itemCount: semaines?.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) => _SemaineCard(
-                        key: ValueKey(i),
-                        semaine: semaines![i],
-                        expanded: i == (semaines?.length ?? 0) - 1,
-                      ),
-                    ),
-                  ),
+                  ..._weekSlivers(semaines!),
               ],
             ),
           ),
@@ -676,9 +799,7 @@ class _SemaineCard extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final n = semaine.notes.length;
-    final dates = semaine.fin.isEmpty
-        ? semaine.debut
-        : '${semaine.debut} → ${semaine.fin}';
+    final dates = _weekDates(semaine);
     return Card.filled(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
@@ -686,7 +807,7 @@ class _SemaineCard extends StatelessWidget {
         shape: const Border(),
         collapsedShape: const Border(),
         initiallyExpanded: expanded,
-        title: Text('Semaine ${semaine.numero ?? '?'}', style: tt.titleMedium),
+        title: Text(_weekTitle(semaine), style: tt.titleMedium),
         subtitle: Text(
           '$dates · $n note${n > 1 ? 's' : ''}',
           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -785,6 +906,352 @@ class _NoteTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SemaineGridCard extends StatelessWidget {
+  final Semaine semaine;
+  final VoidCallback onTap;
+
+  const _SemaineGridCard({required this.semaine, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final average = _weekAverage(semaine);
+    final graded = [
+      for (final note in semaine.notes)
+        if (note.note != null) note,
+    ];
+
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _weekTitle(semaine),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${semaine.notes.length}',
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _weekDates(semaine),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              if (average == null)
+                Text(
+                  'Pas de note',
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                )
+              else
+                Row(
+                  children: [
+                    Icon(Icons.show_chart, size: 14, color: cs.primary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Moy. ${_fmt(average)}',
+                      style: tt.labelMedium?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              const Spacer(),
+              for (final note in graded.take(2))
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          note.matiere,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodySmall,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _fmt(note.note),
+                        style: tt.labelMedium?.copyWith(
+                          color: _noteColor(note, cs),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (graded.length > 2)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    '+${graded.length - 2} autre'
+                    '${graded.length - 2 > 1 ? 's' : ''}',
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SemaineSection extends StatelessWidget {
+  final Semaine semaine;
+  final bool showDivider;
+
+  const _SemaineSection({
+    required this.semaine,
+    required this.showDivider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final average = _weekAverage(semaine);
+    final n = semaine.notes.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _weekTitle(semaine),
+                  style: tt.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (average != null)
+                Text(
+                  'Moy. ${_fmt(average)}',
+                  style: tt.labelMedium?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+          child: Text(
+            '${_weekDates(semaine)} · $n note${n > 1 ? 's' : ''}',
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ),
+        if (n == 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
+            child: Text(
+              'Pas de note cette semaine',
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          )
+        else
+          for (final note in semaine.notes) _NoteTile(note: note),
+        if (showDivider) const Divider(height: 24),
+      ],
+    );
+  }
+}
+
+class _WeekDrawerLayout extends StatefulWidget {
+  final List<Semaine> semaines;
+
+  const _WeekDrawerLayout({required this.semaines});
+
+  @override
+  State<_WeekDrawerLayout> createState() => _WeekDrawerLayoutState();
+}
+
+class _WeekDrawerLayoutState extends State<_WeekDrawerLayout> {
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.semaines.length - 1;
+  }
+
+  @override
+  void didUpdateWidget(covariant _WeekDrawerLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.semaines, widget.semaines)) {
+      _selected = widget.semaines.length - 1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final index = _selected
+        .clamp(0, widget.semaines.length - 1)
+        .toInt();
+    final semaine = widget.semaines[index];
+    final average = _weekAverage(semaine);
+    final n = semaine.notes.length;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 78,
+          child: Column(
+            children: [
+              for (var i = 0; i < widget.semaines.length; i++)
+                _WeekDrawerTab(
+                  label: 'S${widget.semaines[i].numero ?? i + 1}',
+                  count: widget.semaines[i].notes.length,
+                  selected: i == index,
+                  onTap: () => setState(() => _selected = i),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Card.filled(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _weekTitle(semaine),
+                    style: tt.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _weekDates(semaine),
+                    style: tt.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  if (average != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Moyenne ${_fmt(average)}',
+                      style: tt.labelMedium?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  if (n == 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Pas de note cette semaine',
+                        style: tt.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  else
+                    for (final note in semaine.notes)
+                      _NoteTile(note: note),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekDrawerTab extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _WeekDrawerTab({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final fg = selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+            child: Column(
+              children: [
+                Text(
+                  label,
+                  style: tt.labelLarge?.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '$count',
+                  style: tt.labelSmall?.copyWith(
+                    color: fg.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
