@@ -39,6 +39,27 @@ const _mois = [
 
 const edtSemesterPrefKey = 'edt_semestre';
 const edtWeekendPrefKey = 'edt_weekend_visible';
+const _edtSubjectColorsPrefKey = 'edt_subject_colors';
+
+const _subjectColorSeeds = <int>[
+  0xFF1565C0,
+  0xFF00897B,
+  0xFF6A1B9A,
+  0xFFEF6C00,
+  0xFF2E7D32,
+  0xFFAD1457,
+  0xFF4527A0,
+  0xFF00838F,
+  0xFF8E24AA,
+  0xFF5D4037,
+  0xFF3949AB,
+  0xFFC62828,
+];
+
+final _whitespace = RegExp(r'\s+');
+
+String _subjectKey(String matiere) =>
+    matiere.trim().toLowerCase().replaceAll(_whitespace, ' ');
 
 int defaultEdtSemester(DateTime d) => d.month >= 8 || d.month == 1 ? 1 : 2;
 
@@ -132,6 +153,25 @@ String? _recurrenceBadge(Cours c) => switch (_recurrenceOf(c)) {
   _CoursRecurrence.custom => 'Certaines sem.',
 };
 
+class _SubjectPalette {
+  final Color background;
+  final Color foreground;
+
+  const _SubjectPalette(this.background, this.foreground);
+}
+
+final Map<(int, Brightness), _SubjectPalette> _subjectPaletteCache = {};
+
+_SubjectPalette _subjectPalette(int seed, Brightness brightness) {
+  return _subjectPaletteCache.putIfAbsent((seed, brightness), () {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: Color(seed),
+      brightness: brightness,
+    );
+    return _SubjectPalette(scheme.primaryContainer, scheme.onPrimaryContainer);
+  });
+}
+
 class EDTPage extends StatefulWidget {
   final VoidCallback? onTimetableChanged;
 
@@ -150,6 +190,9 @@ class _EDTPageState extends State<EDTPage> {
   _EdtView _view = _EdtView.day;
   double _slideDirection = 0;
   double _dragDx = 0;
+  Map<String, int> _subjectSeeds = const {};
+
+  static const double _dayHourHeight = 76;
 
   static int _defaultSemestre(DateTime d) =>
       d.month >= 8 || d.month == 1 ? 1 : 2;
@@ -201,6 +244,10 @@ class _EDTPageState extends State<EDTPage> {
     } catch (_) {
       colles = [];
     }
+    var subjectSeeds = <String, int>{};
+    try {
+      subjectSeeds = await EdtColorStore.load(cours.map((c) => c.matiere));
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _semestre = semestre;
@@ -208,6 +255,7 @@ class _EDTPageState extends State<EDTPage> {
       if (!showWeekend) _selectedDay = _nextSchoolDay(_selectedDay);
       _cours = cours;
       _colles = colles;
+      _subjectSeeds = subjectSeeds;
     });
   }
 
@@ -330,6 +378,30 @@ class _EDTPageState extends State<EDTPage> {
     }
     if (!mounted) return;
     setState(() => _colles = colles);
+  }
+
+  int? _seedFor(String matiere) => _subjectSeeds[_subjectKey(matiere)];
+
+  Future<void> _chooseSubjectColor(String matiere) async {
+    final key = _subjectKey(matiere);
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (_) => _SubjectColorDialog(
+        matiere: matiere,
+        selectedSeed: _subjectSeeds[key],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final next = {..._subjectSeeds, key: picked};
+    setState(() => _subjectSeeds = next);
+    try {
+      await EdtColorStore.save(next);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'enregistrer la couleur")),
+      );
+    }
   }
 
   List<Cours> _weekCours() => [
@@ -521,6 +593,7 @@ class _EDTPageState extends State<EDTPage> {
       monday: _monday,
       dayCount: _visibleDayCount,
       events: events,
+      subjectSeeds: _subjectSeeds,
       onTap: _showEvent,
     );
   }
@@ -537,10 +610,24 @@ class _EDTPageState extends State<EDTPage> {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       itemCount: events.length,
-      itemBuilder: (context, i) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _EventCard(event: events[i], onTap: () => _showEvent(events[i])),
-      ),
+      itemBuilder: (context, i) {
+        final event = events[i];
+        final height = math.max(
+          _dayHourHeight,
+          (event.end - event.start) / 60 * _dayHourHeight,
+        );
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: SizedBox(
+            height: height,
+            child: _EventCard(
+              event: event,
+              colorSeed: event.isKholle ? null : _seedFor(event.matiere),
+              onTap: () => _showEvent(event),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -551,6 +638,13 @@ class _EDTPageState extends State<EDTPage> {
       useSafeArea: true,
       builder: (ctx) => _EventSheet(
         event: event,
+        colorSeed: event.isKholle ? null : _seedFor(event.matiere),
+        onEditColor: event.isKholle
+            ? null
+            : () {
+                Navigator.pop(ctx);
+                unawaited(_chooseSubjectColor(event.matiere));
+              },
         onEdit: event.isKholle
             ? null
             : () {
@@ -651,15 +745,29 @@ class _EdtEvent {
 
 class _EventCard extends StatelessWidget {
   final _EdtEvent event;
+  final int? colorSeed;
   final VoidCallback onTap;
 
-  const _EventCard({required this.event, required this.onTap});
+  const _EventCard({
+    required this.event,
+    required this.colorSeed,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final isKholle = event.isKholle;
+    final palette = !isKholle && colorSeed != null
+        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        : null;
+    final background = isKholle
+        ? cs.tertiaryContainer
+        : (palette?.background ?? cs.secondaryContainer);
+    final foreground = isKholle
+        ? cs.onTertiaryContainer
+        : (palette?.foreground ?? cs.onSecondaryContainer);
     final details = [
       if (event.salle.isNotEmpty) 'Salle ${event.salle}',
       if (event.prof.isNotEmpty) event.prof,
@@ -667,25 +775,20 @@ class _EventCard extends StatelessWidget {
     final badge = isKholle
         ? 'Khôlle'
         : (event.cours == null ? null : _recurrenceBadge(event.cours!));
-    final badgeBackground = isKholle
-        ? cs.tertiaryContainer
-        : cs.primaryContainer;
-    final badgeForeground = isKholle
-        ? cs.onTertiaryContainer
-        : cs.onPrimaryContainer;
 
     return Card.filled(
       margin: EdgeInsets.zero,
+      color: background,
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
+        textColor: foreground,
+        iconColor: foreground,
         leading: _TimeBadge(
           start: event.startLabel,
           end: isKholle ? null : event.endLabel,
-          background: isKholle ? cs.tertiaryContainer : cs.secondaryContainer,
-          foreground: isKholle
-              ? cs.onTertiaryContainer
-              : cs.onSecondaryContainer,
+          background: foreground.withValues(alpha: 0.12),
+          foreground: foreground,
         ),
         title: Row(
           children: [
@@ -693,7 +796,7 @@ class _EventCard extends StatelessWidget {
               child: Text(
                 event.matiere,
                 overflow: TextOverflow.ellipsis,
-                style: tt.titleMedium,
+                style: tt.titleMedium?.copyWith(color: foreground),
               ),
             ),
             if (badge != null) ...[
@@ -701,19 +804,29 @@ class _EventCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: badgeBackground,
+                  color: foreground.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   badge,
-                  style: tt.labelSmall?.copyWith(color: badgeForeground),
+                  style: tt.labelSmall?.copyWith(color: foreground),
                 ),
               ),
             ],
           ],
         ),
-        subtitle: details.isEmpty ? null : Text(details),
-        trailing: const Icon(Icons.chevron_right),
+        subtitle: details.isEmpty
+            ? null
+            : Text(
+                details,
+                style: tt.bodyMedium?.copyWith(
+                  color: foreground.withValues(alpha: 0.78),
+                ),
+              ),
+        trailing: Icon(
+          Icons.chevron_right,
+          color: foreground.withValues(alpha: 0.78),
+        ),
       ),
     );
   }
@@ -723,12 +836,14 @@ class _WeekGrid extends StatelessWidget {
   final DateTime monday;
   final int dayCount;
   final List<_EdtEvent> events;
+  final Map<String, int> subjectSeeds;
   final ValueChanged<_EdtEvent> onTap;
 
   const _WeekGrid({
     required this.monday,
     required this.dayCount,
     required this.events,
+    required this.subjectSeeds,
     required this.onTap,
   });
 
@@ -823,6 +938,7 @@ class _WeekGrid extends StatelessWidget {
                                     for (final e in events)
                                       if (e.day == jour) e,
                                   ],
+                                  subjectSeeds: subjectSeeds,
                                   startHour: startHour,
                                   hourHeight: _hourHeight,
                                   isToday: _sameDay(
@@ -938,6 +1054,7 @@ class _TimeGutter extends StatelessWidget {
 class _DayColumn extends StatelessWidget {
   final double width;
   final List<_EdtEvent> events;
+  final Map<String, int> subjectSeeds;
   final int startHour;
   final double hourHeight;
   final bool isToday;
@@ -946,6 +1063,7 @@ class _DayColumn extends StatelessWidget {
   const _DayColumn({
     required this.width,
     required this.events,
+    required this.subjectSeeds,
     required this.startHour,
     required this.hourHeight,
     required this.isToday,
@@ -1022,24 +1140,42 @@ class _DayColumn extends StatelessWidget {
       left: 1 + lane * laneWidth,
       width: math.max(1.0, laneWidth - 1),
       height: blockHeight,
-      child: _WeekEventBlock(event: event, onTap: () => onTap(event)),
+      child: _WeekEventBlock(
+        event: event,
+        colorSeed: event.isKholle
+            ? null
+            : subjectSeeds[_subjectKey(event.matiere)],
+        onTap: () => onTap(event),
+      ),
     );
   }
 }
 
 class _WeekEventBlock extends StatelessWidget {
   final _EdtEvent event;
+  final int? colorSeed;
   final VoidCallback onTap;
 
-  const _WeekEventBlock({required this.event, required this.onTap});
+  const _WeekEventBlock({
+    required this.event,
+    required this.colorSeed,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final isKholle = event.isKholle;
-    final bg = isKholle ? cs.tertiaryContainer : cs.secondaryContainer;
-    final fg = isKholle ? cs.onTertiaryContainer : cs.onSecondaryContainer;
+    final palette = !isKholle && colorSeed != null
+        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        : null;
+    final bg = isKholle
+        ? cs.tertiaryContainer
+        : (palette?.background ?? cs.secondaryContainer);
+    final fg = isKholle
+        ? cs.onTertiaryContainer
+        : (palette?.foreground ?? cs.onSecondaryContainer);
 
     return Material(
       color: bg,
@@ -1105,12 +1241,119 @@ class _WeekEventBlock extends StatelessWidget {
   }
 }
 
+class _SubjectColorDialog extends StatelessWidget {
+  final String matiere;
+  final int? selectedSeed;
+
+  const _SubjectColorDialog({required this.matiere, this.selectedSeed});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return AlertDialog(
+      title: Text('Couleur de ${matiere.trim()}'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Cette couleur s'applique à tous les cours de cette matière.",
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (var i = 0; i < _subjectColorSeeds.length; i++)
+                  _SubjectColorChoice(
+                    seed: _subjectColorSeeds[i],
+                    selected: _subjectColorSeeds[i] == selectedSeed,
+                    label: 'Couleur ${i + 1}',
+                    onTap: () => Navigator.pop(context, _subjectColorSeeds[i]),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubjectColorChoice extends StatelessWidget {
+  final int seed;
+  final bool selected;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SubjectColorChoice({
+    required this.seed,
+    required this.selected,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = Color(seed);
+    final checkColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 24,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? cs.onSurface : cs.outlineVariant,
+              width: selected ? 3 : 1,
+            ),
+          ),
+          child: selected
+              ? Icon(Icons.check_rounded, size: 22, color: checkColor)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
 class _EventSheet extends StatelessWidget {
   final _EdtEvent event;
+  final int? colorSeed;
+  final VoidCallback? onEditColor;
   final VoidCallback? onEdit;
   final VoidCallback? onManageColles;
 
-  const _EventSheet({required this.event, this.onEdit, this.onManageColles});
+  const _EventSheet({
+    required this.event,
+    this.colorSeed,
+    this.onEditColor,
+    this.onEdit,
+    this.onManageColles,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1119,6 +1362,9 @@ class _EventSheet extends StatelessWidget {
     final isKholle = event.isKholle;
     final date = event.date;
     final recurrence = event.recurrenceLabel;
+    final palette = !isKholle && colorSeed != null
+        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        : null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -1137,7 +1383,7 @@ class _EventSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isKholle
                       ? cs.tertiaryContainer
-                      : cs.secondaryContainer,
+                      : (palette?.background ?? cs.secondaryContainer),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1145,7 +1391,7 @@ class _EventSheet extends StatelessWidget {
                   style: tt.labelMedium?.copyWith(
                     color: isKholle
                         ? cs.onTertiaryContainer
-                        : cs.onSecondaryContainer,
+                        : (palette?.foreground ?? cs.onSecondaryContainer),
                   ),
                 ),
               ),
@@ -1178,6 +1424,22 @@ class _EventSheet extends StatelessWidget {
               text: event.cours!.semestre == 1 ? '1er semestre' : '2e semestre',
             ),
           const SizedBox(height: 20),
+          if (onEditColor != null) ...[
+            OutlinedButton.icon(
+              onPressed: onEditColor,
+              icon: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: colorSeed == null ? cs.primary : Color(colorSeed!),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+              ),
+              label: const Text('Couleur de la matière'),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (onEdit != null)
             FilledButton.tonalIcon(
               onPressed: onEdit,
@@ -1865,5 +2127,67 @@ class EdtStore {
       jsonEncode([for (final c in cours) _toJson(c)]),
       flush: true,
     );
+  }
+}
+
+class EdtColorStore {
+  static Future<Map<String, int>> load(Iterable<String> matieres) async {
+    final prefs = await SharedPreferences.getInstance();
+    final colors = <String, int>{};
+    final raw = prefs.getString(_edtSubjectColorsPrefKey);
+    if (raw != null) {
+      try {
+        final data = jsonDecode(raw);
+        if (data is Map) {
+          for (final entry in data.entries) {
+            final value = entry.value;
+            if (value is num) colors[entry.key.toString()] = value.toInt();
+          }
+        }
+      } catch (_) {}
+    }
+
+    final keys = <String>{};
+    for (final matiere in matieres) {
+      final key = _subjectKey(matiere);
+      if (key.isNotEmpty) keys.add(key);
+    }
+    final sortedKeys = keys.toList()..sort();
+    final used = <int>{
+      for (final key in sortedKeys)
+        if (colors[key] != null) colors[key]!,
+    };
+    final random = math.Random();
+    var changed = false;
+    for (final key in sortedKeys) {
+      if (colors.containsKey(key)) continue;
+      final available = [
+        for (final seed in _subjectColorSeeds)
+          if (!used.contains(seed)) seed,
+      ];
+      final pool = available.isEmpty ? _subjectColorSeeds : available;
+      final seed = pool[random.nextInt(pool.length)];
+      colors[key] = seed;
+      used.add(seed);
+      changed = true;
+    }
+    if (changed) {
+      try {
+        await _save(colors, prefs);
+      } catch (_) {}
+    }
+    return colors;
+  }
+
+  static Future<void> save(Map<String, int> colors) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _save(colors, prefs);
+  }
+
+  static Future<void> _save(
+    Map<String, int> colors,
+    SharedPreferences prefs,
+  ) async {
+    await prefs.setString(_edtSubjectColorsPrefKey, jsonEncode(colors));
   }
 }
