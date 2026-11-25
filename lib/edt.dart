@@ -2379,6 +2379,9 @@ class EdtStore {
 }
 
 class EdtColorStore {
+  static int? seedFor(Map<String, int> colors, String matiere) =>
+      colors[_subjectKey(matiere)];
+
   static Future<Map<String, int>> load(Iterable<String> matieres) async {
     final prefs = await SharedPreferences.getInstance();
     final colors = <String, int>{};

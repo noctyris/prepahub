@@ -87,6 +87,7 @@ class DevoirsPage extends StatefulWidget {
 class _DevoirsPageState extends State<DevoirsPage> {
   List<Devoir> _devoirs = [];
   Set<String> _matieres = {};
+  Map<String, int> _subjectColors = {};
   DevoirSettings _settings = DevoirSettings.defaults;
   bool _loading = true;
   bool _notificationsAllowed = true;
@@ -124,6 +125,10 @@ class _DevoirsPageState extends State<DevoirsPage> {
       settings = DevoirSettings.defaults;
     }
     final matieres = await _loadMatieres();
+    Map<String, int> subjectColors = {};
+    try {
+      subjectColors = await EdtColorStore.load(matieres);
+    } catch (_) {}
     var allowed = true;
     try {
       allowed = await DevoirNotifications.instance.areNotificationsAllowed();
@@ -133,6 +138,7 @@ class _DevoirsPageState extends State<DevoirsPage> {
       _devoirs = devoirs..sort(_compareDevoirs);
       _settings = settings;
       _matieres = matieres;
+      _subjectColors = subjectColors;
       _notificationsAllowed = allowed;
       _loading = false;
     });
@@ -153,6 +159,19 @@ class _DevoirsPageState extends State<DevoirsPage> {
     } catch (_) {
       return {};
     }
+  }
+
+  Color? _subjectColorFor(String matiere) {
+    final seed = EdtColorStore.seedFor(_subjectColors, matiere);
+    return seed == null ? null : Color(seed);
+  }
+
+  Future<void> _refreshSubjectColors() async {
+    try {
+      final colors = await EdtColorStore.load(_matieres);
+      if (!mounted) return;
+      setState(() => _subjectColors = colors);
+    } catch (_) {}
   }
 
   void _onDraftRequest() {
@@ -204,6 +223,7 @@ class _DevoirsPageState extends State<DevoirsPage> {
       );
     }
     unawaited(DevoirNotifications.instance.sync());
+    unawaited(_refreshSubjectColors());
   }
 
   Future<void> _toggle(Devoir devoir) async {
@@ -557,13 +577,15 @@ class _DevoirsPageState extends State<DevoirsPage> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final palette = _paletteFor(cs, devoir.type);
+    final subjectColor = _subjectColorFor(devoir.matiere);
+    final accent = subjectColor ?? palette.container;
     final details = [
       if (devoir.matiere.isNotEmpty) devoir.matiere,
       _dueLabel(devoir, now),
     ].join(' · ');
     final doneSubtasks = devoir.sousTaches.where((item) => item.fait).length;
     final cardColor = Color.alphaBlend(
-      palette.container.withValues(alpha: 0.45),
+      accent.withValues(alpha: subjectColor == null ? 0.45 : 0.14),
       cs.surface,
     );
     return Padding(
@@ -654,12 +676,8 @@ class _DevoirsPageState extends State<DevoirsPage> {
                 isThreeLine:
                     devoir.description.isNotEmpty ||
                     devoir.sousTaches.isNotEmpty,
-                trailing: IconButton(
-                  tooltip: 'Modifier',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => unawaited(_openForm(initial: devoir)),
-                ),
-                onTap: () => unawaited(_openForm(initial: devoir)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => unawaited(_openDetail(devoir)),
               ),
               if (devoir.sousTaches.isNotEmpty) ...[
                 Divider(
@@ -693,6 +711,23 @@ class _DevoirsPageState extends State<DevoirsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _openDetail(Devoir devoir) async {
+    final subjectColor = _subjectColorFor(devoir.matiere);
+    final edit = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) => _DevoirDetailSheet(
+        devoir: devoir,
+        subjectColor: subjectColor,
+        onEdit: () => Navigator.pop(ctx, true),
+      ),
+    );
+    if (edit != true || !mounted) return;
+    await _openForm(initial: devoir);
   }
 
   String _bucketLabel(DevoirBucket bucket) => switch (bucket) {
@@ -744,6 +779,167 @@ class _DevoirTypeBadge extends StatelessWidget {
             type.label,
             style: tt.labelSmall?.copyWith(color: palette.onContainer),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DevoirDetailSheet extends StatelessWidget {
+  final Devoir devoir;
+  final Color? subjectColor;
+  final VoidCallback onEdit;
+
+  const _DevoirDetailSheet({
+    required this.devoir,
+    this.subjectColor,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final palette = _paletteFor(cs, devoir.type);
+    final accent = subjectColor ?? palette.container;
+    final done = devoir.sousTaches.where((item) => item.fait).length;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.62,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (ctx, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.menu_book_outlined, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      devoir.matiere.isEmpty ? 'Sans matière' : devoir.matiere,
+                      style: tt.labelLarge?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      devoir.titre.isEmpty ? 'Sans titre' : devoir.titre,
+                      style: tt.headlineSmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _DevoirTypeBadge(type: devoir.type, palette: palette),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _DevoirDetailRow(
+            icon: Icons.event_outlined,
+            label: 'Échéance',
+            value: _formatDate(devoir.echeance),
+          ),
+          _DevoirDetailRow(
+            icon: devoir.fait
+                ? Icons.check_circle_outline
+                : Icons.pending_outlined,
+            label: 'Statut',
+            value: devoir.fait ? 'Terminé' : 'À faire',
+          ),
+          if (devoir.description.isNotEmpty) ...[
+            const Divider(height: 24),
+            Text('Description', style: tt.titleSmall),
+            const SizedBox(height: 6),
+            Text(devoir.description, style: tt.bodyMedium),
+          ],
+          if (devoir.sousTaches.isNotEmpty) ...[
+            const Divider(height: 24),
+            Row(
+              children: [
+                Text('Sous-tâches', style: tt.titleSmall),
+                const Spacer(),
+                Text(
+                  '$done/${devoir.sousTaches.length}',
+                  style: tt.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final item in devoir.sousTaches)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Icon(
+                  item.fait
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  color: item.fait ? cs.primary : cs.onSurfaceVariant,
+                ),
+                title: Text(
+                  item.texte,
+                  style: tt.bodyMedium?.copyWith(
+                    color: item.fait ? cs.onSurfaceVariant : cs.onSurface,
+                    decoration: item.fait
+                        ? TextDecoration.lineThrough
+                        : null,
+                  ),
+                ),
+              ),
+          ],
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Modifier le devoir'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DevoirDetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DevoirDetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: cs.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Text(label, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+          const Spacer(),
+          Text(value, style: tt.bodyMedium),
         ],
       ),
     );
