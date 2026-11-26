@@ -319,6 +319,8 @@ class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
         AppSection.today => TodayPage(onOpenSection: _openSection),
         AppSection.notes => NotesPage(
           layout: settings.notesLayout,
+          sort: settings.notesSort,
+          sortDirection: settings.notesSortDirection,
           notifyNewGrades: settings.notifyNewGrades,
         ),
         AppSection.planning => EDTPage(

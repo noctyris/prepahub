@@ -5,11 +5,11 @@ import 'package:material_ui/material_ui.dart';
 import 'app_settings.dart';
 import 'api/client.dart';
 import 'api/parse.dart';
-import 'colloscope.dart';
 import 'devoirs_notifications.dart';
 import 'edt.dart';
 import 'login.dart';
 import 'notes_overview.dart';
+import 'notes_sort.dart';
 import 'notes_store.dart';
 import 'subjects.dart';
 
@@ -42,11 +42,15 @@ Color _noteColor(Note note, ColorScheme cs) {
 
 class NotesPage extends StatefulWidget {
   final NotesLayout layout;
+  final NotesSort sort;
+  final NotesSortDirection sortDirection;
   final bool notifyNewGrades;
 
   const NotesPage({
     super.key,
     this.layout = NotesLayout.cards,
+    this.sort = NotesSort.time,
+    this.sortDirection = NotesSortDirection.ascending,
     this.notifyNewGrades = true,
   });
 
@@ -337,11 +341,9 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _addLocalNote() async {
-    final subjects = await _localNoteSubjects();
-    if (!mounted) return;
     final note = await showDialog<Note>(
       context: context,
-      builder: (_) => _LocalNoteDialog(subjects: subjects),
+      builder: (_) => _LocalNoteDialog(subjects: _localNoteSubjects()),
     );
     if (note == null || !mounted) return;
     final next = [..._localNotes, note];
@@ -350,33 +352,15 @@ class _NotesPageState extends State<NotesPage> {
     unawaited(_loadSubjectSeeds(semaines ?? const [], next));
   }
 
-  /// Matières proposées à la saisie locale : celles des khôlles passées. Si le
-  /// colloscope est vide, on se rabat sur les matières déjà connues.
-  Future<List<String>> _localNoteSubjects() async {
+  /// Matières déjà reçues dans les notes du portail, regroupées et triées.
+  List<String> _localNoteSubjects() {
     final subjects = <String>{};
-    try {
-      subjects.addAll(pastColleSubjects(await ColloscopeStore.load()));
-    } catch (_) {}
-    if (subjects.isEmpty) {
-      for (final semaine in semaines ?? const <Semaine>[]) {
-        for (final note in semaine.notes) {
-          final matiere = canonicalSubject(note.matiere);
-          if (matiere.isNotEmpty) subjects.add(matiere);
-        }
-      }
-      for (final note in _localNotes) {
+    for (final semaine in semaines ?? const <Semaine>[]) {
+      for (final note in semaine.notes) {
+        if (note.local) continue;
         final matiere = canonicalSubject(note.matiere);
         if (matiere.isNotEmpty) subjects.add(matiere);
       }
-    }
-    if (subjects.isEmpty) {
-      try {
-        final cours = await EdtStore.load();
-        for (final item in cours) {
-          final matiere = canonicalSubject(item.matiere);
-          if (matiere.isNotEmpty) subjects.add(matiere);
-        }
-      } catch (_) {}
     }
     return subjects.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -451,6 +435,10 @@ class _NotesPageState extends State<NotesPage> {
 
   List<Widget> _weekSlivers(List<Semaine> semaines) {
     if (semaines.isEmpty) return const [];
+    final newestAtTop =
+        widget.sort == NotesSort.time &&
+        widget.sortDirection == NotesSortDirection.descending;
+    final expandedIndex = newestAtTop ? 0 : semaines.length - 1;
     switch (widget.layout) {
       case NotesLayout.cards:
         return [
@@ -462,7 +450,7 @@ class _NotesPageState extends State<NotesPage> {
               itemBuilder: (context, i) => _SemaineCard(
                 key: ValueKey(i),
                 semaine: semaines[i],
-                expanded: i == semaines.length - 1,
+                expanded: i == expandedIndex,
               ),
             ),
           ),
@@ -504,7 +492,10 @@ class _NotesPageState extends State<NotesPage> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             sliver: SliverToBoxAdapter(
-              child: _WeekDrawerLayout(semaines: semaines),
+              child: _WeekDrawerLayout(
+                semaines: semaines,
+                latestFirst: newestAtTop,
+              ),
             ),
           ),
         ];
@@ -567,6 +558,16 @@ class _NotesPageState extends State<NotesPage> {
     if (loading) return const _NotesSkeleton();
     if (semaines != null) {
       final weeks = semaines!;
+      final displayWeeks = orderedWeeks(
+        weeks,
+        widget.sort,
+        widget.sortDirection,
+      );
+      final localNotes = orderedNotes(
+        _localNotes,
+        widget.sort,
+        widget.sortDirection,
+      );
       return Scaffold(
         body: RefreshIndicator(
           onRefresh: _refresh,
@@ -611,7 +612,7 @@ class _NotesPageState extends State<NotesPage> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   sliver: SliverToBoxAdapter(
                     child: _LocalNotesCard(
-                      notes: _localNotes,
+                      notes: localNotes,
                       onDelete: (note) => unawaited(_deleteLocalNote(note)),
                     ),
                   ),
@@ -622,7 +623,7 @@ class _NotesPageState extends State<NotesPage> {
                   child: Center(child: Text('Aucune note pour le moment')),
                 )
               else if (weeks.isNotEmpty)
-                ..._weekSlivers(weeks)
+                ..._weekSlivers(displayWeeks)
               else
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
@@ -779,24 +780,53 @@ class _LocalNoteDialog extends StatefulWidget {
 }
 
 class _LocalNoteDialogState extends State<_LocalNoteDialog> {
+  static const _otherSubject = '__prepahub_other_subject__';
+
   String? _matiere;
+  late bool _manual;
+  final _customMatiere = TextEditingController();
   final _note = TextEditingController();
   final _professeur = TextEditingController();
   String? _subjectError;
   String? _noteError;
 
   @override
+  void initState() {
+    super.initState();
+    _manual = widget.subjects.isEmpty;
+  }
+
+  @override
   void dispose() {
+    _customMatiere.dispose();
     _note.dispose();
     _professeur.dispose();
     super.dispose();
   }
 
+  void _selectSubject(String? value) {
+    if (value == null) return;
+    setState(() {
+      _subjectError = null;
+      if (value == _otherSubject) {
+        _manual = true;
+        _matiere = null;
+      } else {
+        _manual = false;
+        _matiere = value;
+      }
+    });
+  }
+
   void _submit() {
-    final matiere = _matiere?.trim() ?? '';
+    final matiere = (_manual ? _customMatiere.text : _matiere)?.trim() ?? '';
     final value = double.tryParse(_note.text.trim().replaceAll(',', '.'));
     if (matiere.isEmpty) {
-      setState(() => _subjectError = 'Choisis une matière');
+      setState(
+        () => _subjectError = _manual
+            ? 'Indique une matière'
+            : 'Choisis une matière',
+      );
       return;
     }
     if (value == null || value < 0 || value > 20) {
@@ -807,7 +837,7 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
       context,
       Note(
         id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-        matiere: matiere,
+        matiere: canonicalSubject(matiere),
         note: value,
         professeur: _professeur.text.trim(),
         rang: Rang(),
@@ -828,35 +858,57 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
               'Elle reste sur cet appareil jusqu’à sa publication sur le portail.',
             ),
             const SizedBox(height: 16),
-            InputDecorator(
-              isEmpty: _matiere == null,
-              decoration: InputDecoration(
-                labelText: 'Matière',
-                border: const OutlineInputBorder(),
-                errorText: _subjectError,
-                helperText: widget.subjects.isEmpty
-                    ? 'Ajoute d’abord une khôlle passée pour choisir une matière.'
-                    : 'D’après tes khôlles passées',
-                helperMaxLines: 2,
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _matiere,
-                  isExpanded: true,
-                  hint: const Text('Choisir une matière'),
-                  items: [
-                    for (final subject in widget.subjects)
-                      DropdownMenuItem(value: subject, child: Text(subject)),
-                  ],
-                  onChanged: widget.subjects.isEmpty
-                      ? null
-                      : (value) => setState(() {
-                          _matiere = value;
-                          _subjectError = null;
-                        }),
+            if (widget.subjects.isNotEmpty)
+              InputDecorator(
+                isEmpty: !_manual && _matiere == null,
+                decoration: InputDecoration(
+                  labelText: 'Matière',
+                  border: const OutlineInputBorder(),
+                  errorText: _manual ? null : _subjectError,
+                  helperText: 'D’après les notes déjà reçues',
+                  helperMaxLines: 2,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _matiere,
+                    isExpanded: true,
+                    hint: Text(
+                      _manual ? 'Autre matière' : 'Choisir une matière',
+                    ),
+                    items: [
+                      for (final subject in widget.subjects)
+                        DropdownMenuItem(value: subject, child: Text(subject)),
+                      const DropdownMenuItem(
+                        value: _otherSubject,
+                        child: Text('Autre matière…'),
+                      ),
+                    ],
+                    onChanged: _selectSubject,
+                  ),
                 ),
               ),
-            ),
+            if (widget.subjects.isNotEmpty && _manual)
+              const SizedBox(height: 12),
+            if (_manual)
+              TextField(
+                controller: _customMatiere,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: 'Matière',
+                  border: const OutlineInputBorder(),
+                  errorText: _subjectError,
+                  helperText: widget.subjects.isEmpty
+                      ? 'Aucune note reçue : saisis la matière.'
+                      : 'Saisis la matière absente de la liste.',
+                  helperMaxLines: 2,
+                ),
+                onChanged: (_) {
+                  if (_subjectError != null) {
+                    setState(() => _subjectError = null);
+                  }
+                },
+              ),
             const SizedBox(height: 12),
             TextField(
               controller: _note,
@@ -889,10 +941,7 @@ class _LocalNoteDialogState extends State<_LocalNoteDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Annuler'),
         ),
-        FilledButton(
-          onPressed: widget.subjects.isEmpty ? null : _submit,
-          child: const Text('Ajouter'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Ajouter')),
       ],
     );
   }
@@ -1379,8 +1428,9 @@ class _SemaineSection extends StatelessWidget {
 
 class _WeekDrawerLayout extends StatefulWidget {
   final List<Semaine> semaines;
+  final bool latestFirst;
 
-  const _WeekDrawerLayout({required this.semaines});
+  const _WeekDrawerLayout({required this.semaines, this.latestFirst = false});
 
   @override
   State<_WeekDrawerLayout> createState() => _WeekDrawerLayoutState();
@@ -1389,17 +1439,21 @@ class _WeekDrawerLayout extends StatefulWidget {
 class _WeekDrawerLayoutState extends State<_WeekDrawerLayout> {
   late int _selected;
 
+  int get _initialSelection =>
+      widget.latestFirst ? 0 : widget.semaines.length - 1;
+
   @override
   void initState() {
     super.initState();
-    _selected = widget.semaines.length - 1;
+    _selected = _initialSelection;
   }
 
   @override
   void didUpdateWidget(covariant _WeekDrawerLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.semaines, widget.semaines)) {
-      _selected = widget.semaines.length - 1;
+    if (!identical(oldWidget.semaines, widget.semaines) ||
+        oldWidget.latestFirst != widget.latestFirst) {
+      _selected = _initialSelection;
     }
   }
 

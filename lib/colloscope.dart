@@ -78,24 +78,6 @@ String buildCollesIcs(List<Colle> colles) {
   return '${lines.join('\r\n')}\r\n';
 }
 
-/// Matières des khôlles déjà passées, regroupées (TD/TP/cours) et triées.
-/// Si aucune khôlle n'est passée, toutes les khôlles servent de repli.
-List<String> pastColleSubjects(Iterable<Colle> colles, {DateTime? now}) {
-  final reference = now ?? DateTime.now();
-  final past = [
-    for (final colle in colles)
-      if (colle.date.isBefore(reference)) colle,
-  ];
-  final source = past.isNotEmpty ? past : colles;
-  final subjects = <String>{
-    for (final colle in source)
-      if (canonicalSubject(colle.matiere).isNotEmpty)
-        canonicalSubject(colle.matiere),
-  }.toList();
-  subjects.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-  return subjects;
-}
-
 enum _CollePeriod { upcoming, all, past }
 
 DateTime _monday(DateTime d) =>

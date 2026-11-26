@@ -17,6 +17,8 @@ void main() {
     expect(settings.dynamicColor, isTrue);
     expect(settings.amoledBlack, isFalse);
     expect(settings.notesLayout, NotesLayout.cards);
+    expect(settings.notesSort, NotesSort.time);
+    expect(settings.notesSortDirection, NotesSortDirection.ascending);
     expect(settings.notifyNewGrades, isTrue);
   });
 
@@ -26,6 +28,8 @@ void main() {
       dynamicColor: false,
       amoledBlack: true,
       notesLayout: NotesLayout.grid,
+      notesSort: NotesSort.grade,
+      notesSortDirection: NotesSortDirection.descending,
       notifyNewGrades: false,
     );
 
@@ -36,6 +40,8 @@ void main() {
     expect(loaded.dynamicColor, isFalse);
     expect(loaded.amoledBlack, isTrue);
     expect(loaded.notesLayout, NotesLayout.grid);
+    expect(loaded.notesSort, NotesSort.grade);
+    expect(loaded.notesSortDirection, NotesSortDirection.descending);
     expect(loaded.notifyNewGrades, isFalse);
   });
 }

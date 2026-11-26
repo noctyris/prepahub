@@ -71,11 +71,50 @@ extension NotesLayoutInfo on NotesLayout {
   };
 }
 
+enum NotesSort { time, grade, rank, subject }
+
+extension NotesSortInfo on NotesSort {
+  String get label => switch (this) {
+    NotesSort.time => 'Temps',
+    NotesSort.grade => 'Note',
+    NotesSort.rank => 'Rang',
+    NotesSort.subject => 'Matière',
+  };
+
+  IconData get icon => switch (this) {
+    NotesSort.time => Icons.schedule,
+    NotesSort.grade => Icons.grade_outlined,
+    NotesSort.rank => Icons.leaderboard_outlined,
+    NotesSort.subject => Icons.book_outlined,
+  };
+}
+
+enum NotesSortDirection { ascending, descending }
+
+extension NotesSortDirectionInfo on NotesSortDirection {
+  String get label => switch (this) {
+    NotesSortDirection.ascending => 'Croissant',
+    NotesSortDirection.descending => 'Décroissant',
+  };
+
+  String get description => switch (this) {
+    NotesSortDirection.ascending => 'Du plus petit au plus grand.',
+    NotesSortDirection.descending => 'Du plus grand au plus petit.',
+  };
+
+  IconData get icon => switch (this) {
+    NotesSortDirection.ascending => Icons.arrow_upward,
+    NotesSortDirection.descending => Icons.arrow_downward,
+  };
+}
+
 class AppSettings {
   final ThemeMode themeMode;
   final bool dynamicColor;
   final bool amoledBlack;
   final NotesLayout notesLayout;
+  final NotesSort notesSort;
+  final NotesSortDirection notesSortDirection;
   final bool notifyNewGrades;
   final bool autoRefresh;
   final bool appLock;
@@ -88,6 +127,8 @@ class AppSettings {
     required this.dynamicColor,
     required this.amoledBlack,
     this.notesLayout = NotesLayout.cards,
+    this.notesSort = NotesSort.time,
+    this.notesSortDirection = NotesSortDirection.ascending,
     this.notifyNewGrades = true,
     this.autoRefresh = true,
     this.appLock = false,
@@ -121,6 +162,8 @@ class AppSettings {
     bool? dynamicColor,
     bool? amoledBlack,
     NotesLayout? notesLayout,
+    NotesSort? notesSort,
+    NotesSortDirection? notesSortDirection,
     bool? notifyNewGrades,
     bool? autoRefresh,
     bool? appLock,
@@ -132,6 +175,8 @@ class AppSettings {
     dynamicColor: dynamicColor ?? this.dynamicColor,
     amoledBlack: amoledBlack ?? this.amoledBlack,
     notesLayout: notesLayout ?? this.notesLayout,
+    notesSort: notesSort ?? this.notesSort,
+    notesSortDirection: notesSortDirection ?? this.notesSortDirection,
     notifyNewGrades: notifyNewGrades ?? this.notifyNewGrades,
     autoRefresh: autoRefresh ?? this.autoRefresh,
     appLock: appLock ?? this.appLock,
@@ -171,6 +216,8 @@ class AppSettings {
       dynamicColor: dynamicColor,
       amoledBlack: amoledBlack,
       notesLayout: notesLayout,
+      notesSort: notesSort,
+      notesSortDirection: notesSortDirection,
       notifyNewGrades: notifyNewGrades,
       autoRefresh: autoRefresh,
       appLock: appLock,
@@ -186,6 +233,8 @@ class AppSettingsStore {
   static const _dynamicColorKey = 'app_dynamic_color';
   static const _amoledBlackKey = 'app_amoled_black';
   static const _notesLayoutKey = 'app_notes_layout';
+  static const _notesSortKey = 'app_notes_sort';
+  static const _notesSortDirectionKey = 'app_notes_sort_direction';
   static const _notifyNewGradesKey = 'app_notify_new_grades';
   static const _autoRefreshKey = 'app_auto_refresh';
   static const _appLockKey = 'app_lock';
@@ -218,6 +267,10 @@ class AppSettingsStore {
         amoledBlack:
             prefs.getBool(_amoledBlackKey) ?? AppSettings.defaults.amoledBlack,
         notesLayout: _notesLayoutFrom(prefs.getString(_notesLayoutKey)),
+        notesSort: _notesSortFrom(prefs.getString(_notesSortKey)),
+        notesSortDirection: _notesSortDirectionFrom(
+          prefs.getString(_notesSortDirectionKey),
+        ),
         notifyNewGrades:
             prefs.getBool(_notifyNewGradesKey) ??
             AppSettings.defaults.notifyNewGrades,
@@ -241,6 +294,11 @@ class AppSettingsStore {
     await prefs.setBool(_dynamicColorKey, settings.dynamicColor);
     await prefs.setBool(_amoledBlackKey, settings.amoledBlack);
     await prefs.setString(_notesLayoutKey, settings.notesLayout.name);
+    await prefs.setString(_notesSortKey, settings.notesSort.name);
+    await prefs.setString(
+      _notesSortDirectionKey,
+      settings.notesSortDirection.name,
+    );
     await prefs.setBool(_notifyNewGradesKey, settings.notifyNewGrades);
     await prefs.setBool(_autoRefreshKey, settings.autoRefresh);
     await prefs.setBool(_appLockKey, settings.appLock);
@@ -274,6 +332,20 @@ class AppSettingsStore {
       if (layout.name == value) return layout;
     }
     return AppSettings.defaults.notesLayout;
+  }
+
+  static NotesSort _notesSortFrom(String? value) {
+    for (final sort in NotesSort.values) {
+      if (sort.name == value) return sort;
+    }
+    return AppSettings.defaults.notesSort;
+  }
+
+  static NotesSortDirection _notesSortDirectionFrom(String? value) {
+    for (final direction in NotesSortDirection.values) {
+      if (direction.name == value) return direction;
+    }
+    return AppSettings.defaults.notesSortDirection;
   }
 
   static ThemeMode _themeModeFrom(String? value) {

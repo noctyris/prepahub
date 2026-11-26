@@ -162,6 +162,55 @@ class _SettingsPageState extends State<SettingsPage> {
     await _update(widget.settings.copyWith(appLock: value));
   }
 
+  Future<void> _chooseNotesSort() async {
+    final settings = widget.settings;
+    final picked = await showDialog<NotesSort>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Trier les notes par'),
+        children: [
+          for (final sort in NotesSort.values)
+            ListTile(
+              leading: Icon(sort.icon),
+              title: Text(sort.label),
+              trailing: settings.notesSort == sort
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, sort),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted || picked == settings.notesSort) return;
+    await _update(settings.copyWith(notesSort: picked));
+  }
+
+  Future<void> _chooseNotesSortDirection() async {
+    final settings = widget.settings;
+    final picked = await showDialog<NotesSortDirection>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Sens du tri'),
+        children: [
+          for (final direction in NotesSortDirection.values)
+            ListTile(
+              leading: Icon(direction.icon),
+              title: Text(direction.label),
+              subtitle: Text(direction.description),
+              trailing: settings.notesSortDirection == direction
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, direction),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted || picked == settings.notesSortDirection) {
+      return;
+    }
+    await _update(settings.copyWith(notesSortDirection: picked));
+  }
+
   Future<void> _chooseNotesLayout() async {
     final settings = widget.settings;
     final picked = await showDialog<NotesLayout>(
@@ -322,6 +371,22 @@ class _SettingsPageState extends State<SettingsPage> {
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
+                ListTile(
+                  leading: Icon(settings.notesSort.icon),
+                  title: const Text('Trier les notes par'),
+                  subtitle: Text(settings.notesSort.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseNotesSort,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(settings.notesSortDirection.icon),
+                  title: const Text('Sens du tri'),
+                  subtitle: Text(settings.notesSortDirection.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseNotesSortDirection,
+                ),
+                const Divider(height: 1),
                 ListTile(
                   leading: Icon(settings.notesLayout.icon),
                   title: const Text('Disposition des notes'),
