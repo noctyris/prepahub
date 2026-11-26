@@ -717,20 +717,15 @@ class _EvolutionPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round;
       final dotPaint = Paint()..color = item.color;
       Offset? previous;
-      var previousIndex = -1;
       for (var i = 0; i < item.values.length && i < labels.length; i++) {
         final value = item.values[i];
-        if (value == null) {
-          previous = null;
-          continue;
-        }
+        if (value == null) continue;
         final point = Offset(xFor(i), yFor(value));
-        if (previous != null && previousIndex == i - 1) {
+        if (previous != null) {
           canvas.drawLine(previous, point, linePaint);
         }
         canvas.drawCircle(point, item.strong ? 3.2 : 2.3, dotPaint);
         previous = point;
-        previousIndex = i;
       }
     }
 

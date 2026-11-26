@@ -294,6 +294,16 @@ class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
     if (selectedIndex < 0) {
       selectedIndex = settings.navMenu.contains(_current) ? bar.length : 0;
     }
+
+    Widget destinationIcon(Widget icon, {required bool isDefault}) {
+      if (!isDefault) return icon;
+      return Badge(
+        smallSize: 6,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: Tooltip(message: 'Onglet par défaut', child: icon),
+      );
+    }
+
     return Scaffold(
       bottomNavigationBar: NavigationBar(
         onDestinationSelected: (int index) {
@@ -308,11 +318,20 @@ class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
           for (final section in bar)
             NavigationDestination(
               selectedIcon: Icon(section.selectedIcon),
-              icon: Icon(section.icon),
+              icon: destinationIcon(
+                Icon(section.icon),
+                isDefault: section == settings.startSection,
+              ),
               label: section.label,
             ),
           if (settings.navMenu.isNotEmpty)
-            const NavigationDestination(icon: Icon(Icons.menu), label: 'Menu'),
+            NavigationDestination(
+              icon: destinationIcon(
+                const Icon(Icons.menu),
+                isDefault: settings.navMenu.contains(settings.startSection),
+              ),
+              label: 'Menu',
+            ),
         ],
       ),
       body: switch (_current) {
