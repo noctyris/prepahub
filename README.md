@@ -1,66 +1,118 @@
-# PrépaHub
-[![Release Build](https://github.com/noctyris/prepahub/actions/workflows/release-build.yaml/badge.svg)](https://github.com/noctyris/prepahub/actions/workflows/release-build.yaml)
-> 🇫🇷 [Version française](README.fr.md)
+<div align="center">
+  <img src="assets/icon.png" width="112" alt="PrépaHub icon">
+  <h1>PrépaHub</h1>
+  <p><strong>Your PRÉPA+ grades, timetable and homework in one focused Flutter app.</strong></p>
+  <p>
+    <a href="https://github.com/noctyris/prepahub/actions/workflows/release-build.yaml">
+      <img src="https://github.com/noctyris/prepahub/actions/workflows/release-build.yaml/badge.svg" alt="Release Build">
+    </a>
+    <a href="https://github.com/noctyris/prepahub/releases/latest">
+      <img src="https://img.shields.io/github/v/release/noctyris/prepahub?display_name=tag&sort=semver" alt="Latest release">
+    </a>
+    <img src="https://img.shields.io/badge/Android%20%7C%20Linux%20%7C%20macOS-3F51B5?logo=flutter&logoColor=white" alt="Android, Linux and macOS">
+  </p>
+  <p><strong>English</strong> · <a href="README.fr.md">🇫🇷 Français</a></p>
+</div>
 
-A mobile and desktop app for checking your PRÉPA+ grades straight from your phone, no browser needed.
+---
 
-Built with [Flutter](https://flutter.dev) (Dart), with Material You (Material 3) support — dynamic color included.
+PrépaHub connects to your school's PRÉPA+ portal and turns its web interface into a fast, native-feeling dashboard. Grades, timetable, khôlles and homework live in one place, with a persistent session, offline access and sensible customization.
+
+## ✨ At a glance
+
+| 📊 Grades | 🗓️ Day to day | 🔐 Peace of mind |
+| :--- | :--- | :--- |
+| Weekly grades, weighted average, coefficients, simulator, distribution and trends. | Today dashboard, timetable, khôlles, homework and reminders. | Secure session, offline cache, biometric lock and Material You. |
 
 ## Features
 
-* Log in to your school's PRÉPA+ portal (custom portal URL supported)
-* Today dashboard: classes, homework, khôlles and latest grades at a glance
-* Grades displayed week by week (subject, grade, teacher, rank, average, standard deviation)
-* TD, TP and lecture variants grouped under the same subject
-* Weighted average with per-subject coefficients, grade simulator and charts split by subject (using timetable colours)
-* Search and filters for grades, homework and khôlles (upcoming, past or all)
-* Persistent session: the app logs back in automatically on launch (credentials stored in the platform keychain)
-* Optional biometric app lock
-* Grades cached on the device and readable offline
-* Add a grade locally until it is published on the portal
-* Optional notification when a refresh finds new grades, plus background refresh while the app is running
-* Khôlle reminders the day before and calendar (.ics) export
-* Material You: adapts to your system palette on Android 12+
-* Available on Android, Linux, Windows and macOS
+### Grades
 
-## Building
+- Log in to your school's PRÉPA+ portal, including custom portal URLs.
+- Browse grades week by week: subject, grade, teacher, rank, class average and standard deviation.
+- Group TD, TP and lecture variants under the same subject.
+- Weighted average with per-subject coefficients, a target-grade simulator and per-subject trends.
+- Grade histogram with an optional normal curve based on class averages and standard deviations, highlighting the bucket containing your average.
+- Sort grades by time, grade, rank or subject, in ascending or descending order.
+- Add a grade locally until it is published on the portal.
 
-### Prerequisites
+### Organisation
 
-* [Flutter](https://docs.flutter.dev/get-started/install) (stable channel)
-* For Android: Android SDK (Gradle fetches what it needs)
+- **Today** dashboard with the day's classes, homework, khôlles and latest grades.
+- Timetable with subject colours, khôlle management and calendar (`.ics`) export.
+- Homework list with due dates, subtasks and evening reminders.
+- Search and filters for grades, homework and khôlles.
 
-```shell
-flutter doctor
+### Comfort
+
+- Grades cached on the device and readable offline.
+- Automatic refresh while the app is open, plus an optional notification when new grades appear.
+- Material You dynamic colour on Android 12+, light/dark themes and an AMOLED black option.
+- Customizable navigation, grade layout, sorting and default opening page.
+- Optional biometric or device-credential app lock.
+- Available on **Android**, **Linux** and **macOS**.
+
+## 📥 Installation
+
+Download the latest Android APK, Linux archive or macOS build from the
+[Releases](https://github.com/noctyris/prepahub/releases/latest) page.
+
+## 🛠️ Development
+
+### Requirements
+
+- [Flutter](https://docs.flutter.dev/get-started/install) on the stable channel
+- Android SDK for Android builds
+- Linux: `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`, `liblzma-dev` and `libsecret-1-dev`
+- macOS: Xcode and the command line tools
+
+### Run locally
+
+```bash
+git clone https://github.com/noctyris/prepahub.git
+cd prepahub
+flutter pub get
+flutter run
 ```
 
-### Desktop
+Use `flutter devices` to list available targets, or run `flutter run -d linux` /
+`flutter run -d macos` to launch a specific desktop build.
 
-```shell
-flutter run -d linux
-flutter run -d windows
-flutter run -d macos
+### Checks
+
+```bash
+flutter analyze
+flutter test
 ```
 
-Release builds for Linux, Windows and macOS are produced by the
-`Release Build` workflow.
+### Release builds
 
-### Android (APK)
-
-```shell
+```bash
 flutter build apk --release
+flutter build linux --release
+flutter build macos --release
 ```
 
-The APK is generated in `build/app/outputs/flutter-apk/`.
+Pushing a `v*` tag triggers the `Release Build` workflow. Bump the `version`
+field in `pubspec.yaml` before tagging so the app reports the same version as
+the release.
 
-## Security
+## 🔒 Privacy
 
-Credentials are stored in the platform's secure storage (Android Keystore, iOS/macOS Keychain, Windows Credential Locker, libsecret on Linux). If the secure store is unavailable, the app falls back to its private SharedPreferences so login keeps working. Credentials are never sent anywhere other than the portal server you configured. The optional app lock uses the device's biometric or system authentication.
+Credentials are stored in the platform's secure storage: Android Keystore,
+Apple Keychain on Apple platforms, and `libsecret` on Linux. If secure storage
+is unavailable, the app falls back to its private `SharedPreferences` so login
+keeps working.
 
-## License
+Credentials are only sent to the portal you configure. The only other network
+request is GitHub's public release API, used to check for updates. Grades and
+local data stay on the device and remain available offline. The optional app
+lock uses the device's biometric or system authentication.
 
-To be determined.
+## 📄 License
 
-## About
+License to be determined.
 
-App to gather grades, written in Flutter.
+---
+
+<p align="center"><sub>Made with Flutter · Not affiliated with PRÉPA+.</sub></p>

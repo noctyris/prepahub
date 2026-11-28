@@ -15,15 +15,16 @@ class AppUpdate {
 }
 
 List<int> _parse(String v) {
-  final core = v.trim().replaceFirst(RegExp(r'^v'), '').split(RegExp(r'[-+]')).first;
+  final core = v
+      .trim()
+      .replaceFirst(RegExp(r'^v'), '')
+      .split(RegExp(r'[-+]'))
+      .first;
   return [for (final p in core.split('.')) int.tryParse(p) ?? 0];
 }
 
 bool _matchesPlatformAsset(String name) {
   if (Platform.isAndroid) return name.endsWith('.apk');
-  if (Platform.isWindows) {
-    return name.contains('windows') && name.endsWith('.zip');
-  }
   if (Platform.isMacOS) return name.contains('macos') && name.endsWith('.zip');
   if (Platform.isLinux) {
     return name.contains('linux') && name.endsWith('.tar.gz');
@@ -44,20 +45,23 @@ bool isNewerVersion(String a, String b) {
 Future<AppUpdate?> checkForUpdate() async {
   try {
     final info = await PackageInfo.fromPlatform();
-    final res = await http.get(
-      Uri.https('api.github.com', '/repos/$_repo/releases/latest'),
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'PrepaHub',
-      },
-    ).timeout(const Duration(seconds: 8));
+    final res = await http
+        .get(
+          Uri.https('api.github.com', '/repos/$_repo/releases/latest'),
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'PrepaHub',
+          },
+        )
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode != 200) return null;
 
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final tag = json['tag_name'] as String?;
     if (tag == null || !isNewerVersion(tag, info.version)) return null;
 
-    var url = (json['html_url'] as String?) ?? 'https://github.com/$_repo/releases';
+    var url =
+        (json['html_url'] as String?) ?? 'https://github.com/$_repo/releases';
     for (final a in (json['assets'] as List? ?? const [])) {
       final name = (a as Map)['name'] as String? ?? '';
       if (_matchesPlatformAsset(name)) {
@@ -73,13 +77,15 @@ Future<AppUpdate?> checkForUpdate() async {
 
 void showUpdateSnack(BuildContext context, AppUpdate u) {
   final m = ScaffoldMessenger.of(context);
-  m.showSnackBar(SnackBar(
-    content: Text('Mise à jour ${u.version} disponible'),
-    duration: const Duration(seconds: 12),
-    action: SnackBarAction(
-      label: 'Télécharger',
-      onPressed: () =>
-          launchUrl(Uri.parse(u.url), mode: LaunchMode.externalApplication),
+  m.showSnackBar(
+    SnackBar(
+      content: Text('Mise à jour ${u.version} disponible'),
+      duration: const Duration(seconds: 12),
+      action: SnackBarAction(
+        label: 'Télécharger',
+        onPressed: () =>
+            launchUrl(Uri.parse(u.url), mode: LaunchMode.externalApplication),
+      ),
     ),
-  ));
+  );
 }

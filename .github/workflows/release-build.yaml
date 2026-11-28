@@ -75,29 +75,6 @@ jobs:
           path: prepahub-*-linux-x64.tar.gz
           if-no-files-found: error
 
-#  build-windows:
-#    runs-on: windows-latest
-#    steps:
-#      - uses: actions/checkout@v5
-#      - uses: subosito/flutter-action@v2
-#        with:
-#          channel: stable
-#          cache: true
-#      - run: flutter config --enable-windows-desktop
-#      - run: flutter pub get
-#      - run: flutter build windows --release
-#      - name: Package
-#        shell: pwsh
-#        run: |
-#          Compress-Archive -Path build/windows/x64/runner/Release/* `
-#            -DestinationPath "prepahub-${{ github.ref_name }}-windows-x64.zip"
-#      - name: Upload Windows build
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: prepahub-windows
-#          path: prepahub-*-windows-x64.zip
-#          if-no-files-found: error
-
   build-macos:
     runs-on: macos-latest
     steps:
@@ -125,7 +102,6 @@ jobs:
     needs:
       - build-android
       - build-linux
-#      - build-windows
       - build-macos
     runs-on: ubuntu-latest
     permissions:

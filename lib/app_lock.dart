@@ -11,11 +11,7 @@ class AppLockService {
   static final LocalAuthentication _auth = LocalAuthentication();
 
   static bool get isSupported =>
-      !kIsWeb &&
-      (Platform.isAndroid ||
-          Platform.isIOS ||
-          Platform.isMacOS ||
-          Platform.isWindows);
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
   static Future<bool> canAuthenticate() async {
     if (!isSupported) return false;
