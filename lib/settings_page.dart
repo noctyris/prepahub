@@ -399,6 +399,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
+                  secondary: const Icon(Icons.analytics_outlined),
+                  title: const Text('Distribution normale'),
+                  subtitle: const Text(
+                    'Superpose la courbe de la classe et met en évidence ta '
+                    'moyenne.',
+                  ),
+                  value: settings.showNormalDistribution,
+                  onChanged: (value) => unawaited(
+                    _update(settings.copyWith(showNormalDistribution: value)),
+                  ),
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
                   secondary: const Icon(Icons.notifications_active_outlined),
                   title: const Text('Nouvelles notes'),
                   subtitle: const Text(
@@ -444,6 +457,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   subtitle: Text(_navSummary),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _openNavigation,
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.highlight_alt),
+                  title: const Text("Mettre en évidence l'onglet d'ouverture"),
+                  subtitle: const Text(
+                    'Affiche un point sur la page qui s’ouvre par défaut.',
+                  ),
+                  value: settings.highlightDefaultTab,
+                  onChanged: (value) => unawaited(
+                    _update(settings.copyWith(highlightDefaultTab: value)),
+                  ),
                 ),
               ],
             ),

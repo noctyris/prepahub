@@ -3,8 +3,19 @@ import 'package:prepahub/api/parse.dart';
 import 'package:prepahub/notes_stats.dart';
 import 'package:prepahub/subjects.dart';
 
-Note _note(String matiere, double value) =>
-    Note(matiere: matiere, note: value, professeur: '', rang: Rang());
+Note _note(
+  String matiere,
+  double value, {
+  double? moyenne,
+  double? ecartType,
+}) => Note(
+  matiere: matiere,
+  note: value,
+  professeur: '',
+  rang: Rang(),
+  moyenne: moyenne,
+  ecartType: ecartType,
+);
 
 void main() {
   test('regroupe TD, TP et cours dans la même matière', () {
@@ -29,6 +40,33 @@ void main() {
       closeTo(12, 0.001),
     );
     expect(analytics.simpleAverage(), closeTo(13, 0.001));
+  });
+
+  test('calcule une distribution normale à partir des moyennes de classe', () {
+    final analytics = NotesAnalytics([
+      Semaine(
+        debut: '',
+        fin: '',
+        notes: [
+          _note('Maths', 14, moyenne: 10, ecartType: 2),
+          _note('Physique', 16, moyenne: 14, ecartType: 2),
+        ],
+      ),
+    ]);
+
+    final normal = analytics.normalDistribution();
+
+    expect(normal, isNotNull);
+    expect(normal!.moyenne, closeTo(12, 0.001));
+    expect(normal.ecartType, closeTo(2.8284, 0.001));
+  });
+
+  test('trouve la tranche d’une moyenne', () {
+    expect(gradeBucket(0), 0);
+    expect(gradeBucket(4), 1);
+    expect(gradeBucket(12), 3);
+    expect(gradeBucket(20), 4);
+    expect(gradeBucket(null), isNull);
   });
 
   test('simule la note nécessaire dans une matière', () {

@@ -19,6 +19,8 @@ void main() {
     expect(settings.notesLayout, NotesLayout.cards);
     expect(settings.notesSort, NotesSort.time);
     expect(settings.notesSortDirection, NotesSortDirection.ascending);
+    expect(settings.showNormalDistribution, isTrue);
+    expect(settings.highlightDefaultTab, isTrue);
     expect(settings.notifyNewGrades, isTrue);
   });
 
@@ -30,6 +32,8 @@ void main() {
       notesLayout: NotesLayout.grid,
       notesSort: NotesSort.grade,
       notesSortDirection: NotesSortDirection.descending,
+      showNormalDistribution: false,
+      highlightDefaultTab: false,
       notifyNewGrades: false,
     );
 
@@ -42,6 +46,8 @@ void main() {
     expect(loaded.notesLayout, NotesLayout.grid);
     expect(loaded.notesSort, NotesSort.grade);
     expect(loaded.notesSortDirection, NotesSortDirection.descending);
+    expect(loaded.showNormalDistribution, isFalse);
+    expect(loaded.highlightDefaultTab, isFalse);
     expect(loaded.notifyNewGrades, isFalse);
   });
 }

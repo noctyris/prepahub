@@ -296,7 +296,7 @@ class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
     }
 
     Widget destinationIcon(Widget icon, {required bool isDefault}) {
-      if (!isDefault) return icon;
+      if (!isDefault || !settings.highlightDefaultTab) return icon;
       return Badge(
         smallSize: 6,
         backgroundColor: Theme.of(context).colorScheme.primary,
@@ -340,6 +340,7 @@ class _RootPageState extends State<RootPage> with WidgetsBindingObserver {
           layout: settings.notesLayout,
           sort: settings.notesSort,
           sortDirection: settings.notesSortDirection,
+          showNormalDistribution: settings.showNormalDistribution,
           notifyNewGrades: settings.notifyNewGrades,
         ),
         AppSection.planning => EDTPage(

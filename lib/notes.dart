@@ -44,6 +44,7 @@ class NotesPage extends StatefulWidget {
   final NotesLayout layout;
   final NotesSort sort;
   final NotesSortDirection sortDirection;
+  final bool showNormalDistribution;
   final bool notifyNewGrades;
 
   const NotesPage({
@@ -51,6 +52,7 @@ class NotesPage extends StatefulWidget {
     this.layout = NotesLayout.cards,
     this.sort = NotesSort.time,
     this.sortDirection = NotesSortDirection.ascending,
+    this.showNormalDistribution = true,
     this.notifyNewGrades = true,
   });
 
@@ -604,6 +606,7 @@ class _NotesPageState extends State<NotesPage> {
                       semaines: weeks,
                       extraNotes: _localNotes,
                       subjectSeeds: _subjectSeeds,
+                      showNormalDistribution: widget.showNormalDistribution,
                     ),
                   ),
                 ),

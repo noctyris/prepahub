@@ -115,6 +115,8 @@ class AppSettings {
   final NotesLayout notesLayout;
   final NotesSort notesSort;
   final NotesSortDirection notesSortDirection;
+  final bool showNormalDistribution;
+  final bool highlightDefaultTab;
   final bool notifyNewGrades;
   final bool autoRefresh;
   final bool appLock;
@@ -129,6 +131,8 @@ class AppSettings {
     this.notesLayout = NotesLayout.cards,
     this.notesSort = NotesSort.time,
     this.notesSortDirection = NotesSortDirection.ascending,
+    this.showNormalDistribution = true,
+    this.highlightDefaultTab = true,
     this.notifyNewGrades = true,
     this.autoRefresh = true,
     this.appLock = false,
@@ -164,6 +168,8 @@ class AppSettings {
     NotesLayout? notesLayout,
     NotesSort? notesSort,
     NotesSortDirection? notesSortDirection,
+    bool? showNormalDistribution,
+    bool? highlightDefaultTab,
     bool? notifyNewGrades,
     bool? autoRefresh,
     bool? appLock,
@@ -177,6 +183,9 @@ class AppSettings {
     notesLayout: notesLayout ?? this.notesLayout,
     notesSort: notesSort ?? this.notesSort,
     notesSortDirection: notesSortDirection ?? this.notesSortDirection,
+    showNormalDistribution:
+        showNormalDistribution ?? this.showNormalDistribution,
+    highlightDefaultTab: highlightDefaultTab ?? this.highlightDefaultTab,
     notifyNewGrades: notifyNewGrades ?? this.notifyNewGrades,
     autoRefresh: autoRefresh ?? this.autoRefresh,
     appLock: appLock ?? this.appLock,
@@ -218,6 +227,8 @@ class AppSettings {
       notesLayout: notesLayout,
       notesSort: notesSort,
       notesSortDirection: notesSortDirection,
+      showNormalDistribution: showNormalDistribution,
+      highlightDefaultTab: highlightDefaultTab,
       notifyNewGrades: notifyNewGrades,
       autoRefresh: autoRefresh,
       appLock: appLock,
@@ -235,6 +246,8 @@ class AppSettingsStore {
   static const _notesLayoutKey = 'app_notes_layout';
   static const _notesSortKey = 'app_notes_sort';
   static const _notesSortDirectionKey = 'app_notes_sort_direction';
+  static const _showNormalDistributionKey = 'app_notes_normal_distribution';
+  static const _highlightDefaultTabKey = 'app_highlight_default_tab';
   static const _notifyNewGradesKey = 'app_notify_new_grades';
   static const _autoRefreshKey = 'app_auto_refresh';
   static const _appLockKey = 'app_lock';
@@ -271,6 +284,12 @@ class AppSettingsStore {
         notesSortDirection: _notesSortDirectionFrom(
           prefs.getString(_notesSortDirectionKey),
         ),
+        showNormalDistribution:
+            prefs.getBool(_showNormalDistributionKey) ??
+            AppSettings.defaults.showNormalDistribution,
+        highlightDefaultTab:
+            prefs.getBool(_highlightDefaultTabKey) ??
+            AppSettings.defaults.highlightDefaultTab,
         notifyNewGrades:
             prefs.getBool(_notifyNewGradesKey) ??
             AppSettings.defaults.notifyNewGrades,
@@ -299,6 +318,11 @@ class AppSettingsStore {
       _notesSortDirectionKey,
       settings.notesSortDirection.name,
     );
+    await prefs.setBool(
+      _showNormalDistributionKey,
+      settings.showNormalDistribution,
+    );
+    await prefs.setBool(_highlightDefaultTabKey, settings.highlightDefaultTab);
     await prefs.setBool(_notifyNewGradesKey, settings.notifyNewGrades);
     await prefs.setBool(_autoRefreshKey, settings.autoRefresh);
     await prefs.setBool(_appLockKey, settings.appLock);

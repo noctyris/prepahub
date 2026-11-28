@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,6 +50,15 @@ class WeekNotes {
   final List<Note> notes;
 
   const WeekNotes(this.label, this.notes);
+}
+
+/// Tranche de 4 points contenant [value], ou `null` si la valeur manque.
+int? gradeBucket(double? value) {
+  if (value == null || !value.isFinite) return null;
+  var bucket = (value / 4).floor();
+  if (bucket < 0) bucket = 0;
+  if (bucket > 4) bucket = 4;
+  return bucket;
 }
 
 /// Agrège les notes du portail, les notes locales et les semaines pour les
@@ -129,12 +139,34 @@ class NotesAnalytics {
   List<int> distribution({String? subject}) {
     final counts = List<int>.filled(5, 0);
     for (final note in notesFor(subject)) {
-      var bucket = (note.note! / 4).floor();
-      if (bucket < 0) bucket = 0;
-      if (bucket > 4) bucket = 4;
-      counts[bucket]++;
+      counts[gradeBucket(note.note)!]++;
     }
     return counts;
+  }
+
+  /// Moyenne et écart type de la distribution de classe, calculés à partir
+  /// des informations fournies par le portail pour les notes affichées.
+  ({double moyenne, double ecartType})? normalDistribution({String? subject}) {
+    final notes = [
+      for (final note in notesFor(subject))
+        if (note.moyenne != null &&
+            note.ecartType != null &&
+            note.ecartType! > 0)
+          note,
+    ];
+    if (notes.isEmpty) return null;
+    final moyenne =
+        notes.map((note) => note.moyenne!).reduce((a, b) => a + b) /
+        notes.length;
+    var variance = 0.0;
+    for (final note in notes) {
+      final ecart = note.moyenne! - moyenne;
+      variance += note.ecartType! * note.ecartType! + ecart * ecart;
+    }
+    variance /= notes.length;
+    final ecartType = math.sqrt(variance);
+    if (!ecartType.isFinite || ecartType <= 0) return null;
+    return (moyenne: moyenne, ecartType: ecartType);
   }
 
   ({double sum, double weight}) _weightedTotals(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -18,12 +19,14 @@ class NotesOverview extends StatefulWidget {
   final List<Semaine> semaines;
   final List<Note> extraNotes;
   final Map<String, int> subjectSeeds;
+  final bool showNormalDistribution;
 
   const NotesOverview({
     super.key,
     required this.semaines,
     this.extraNotes = const [],
     this.subjectSeeds = const {},
+    this.showNormalDistribution = true,
   });
 
   @override
@@ -93,6 +96,15 @@ class _NotesOverviewState extends State<NotesOverview> {
     final subjectColor = filtered == null
         ? cs.primary
         : _subjectColor(filtered, cs);
+    final normal = widget.showNormalDistribution
+        ? analytics.normalDistribution(subject: filtered)
+        : null;
+    final myAverage = widget.showNormalDistribution
+        ? (filtered == null
+              ? weighted
+              : analytics.simpleAverage(subject: filtered))
+        : null;
+    final myBucket = gradeBucket(myAverage);
 
     final series = <_ChartSeries>[
       if (filtered == null)
@@ -216,6 +228,9 @@ class _NotesOverviewState extends State<NotesOverview> {
             _DistributionChart(
               counts: analytics.distribution(subject: filtered),
               color: subjectColor,
+              normal: normal,
+              highlightBucket: myBucket,
+              myAverage: myAverage,
             ),
             const SizedBox(height: 8),
             const Divider(),
@@ -538,8 +553,17 @@ class _SimulatorDialogState extends State<_SimulatorDialog> {
 class _DistributionChart extends StatelessWidget {
   final List<int> counts;
   final Color color;
+  final ({double moyenne, double ecartType})? normal;
+  final int? highlightBucket;
+  final double? myAverage;
 
-  const _DistributionChart({required this.counts, required this.color});
+  const _DistributionChart({
+    required this.counts,
+    required this.color,
+    this.normal,
+    this.highlightBucket,
+    this.myAverage,
+  });
 
   static const _labels = ['0–4', '4–8', '8–12', '12–16', '16–20'];
 
@@ -551,52 +575,176 @@ class _DistributionChart extends StatelessWidget {
     for (final count in counts) {
       if (count > maxCount) maxCount = count;
     }
-    return SizedBox(
-      height: 96,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 0; i < counts.length; i++)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${counts[i]}',
-                      style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: maxCount == 0
-                          ? 0.0
-                          : 4 + 60 * counts[i] / maxCount,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
+    final normalValue = normal;
+    final highlight = highlightBucket;
+    final average = myAverage;
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 96,
+          child: Stack(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < counts.length; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${counts[i]}',
+                              style: tt.labelSmall?.copyWith(
+                                color: highlight == i
+                                    ? cs.tertiary
+                                    : cs.onSurfaceVariant,
+                                fontWeight: highlight == i
+                                    ? FontWeight.w700
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              height: maxCount == 0
+                                  ? 0.0
+                                  : 4 + 60 * counts[i] / maxCount,
+                              decoration: BoxDecoration(
+                                color: color,
+                                border: highlight == i
+                                    ? Border.all(color: cs.tertiary, width: 1.5)
+                                    : null,
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(4),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _labels[i],
+                              style: tt.labelSmall?.copyWith(
+                                color: highlight == i
+                                    ? cs.tertiary
+                                    : cs.onSurfaceVariant,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _labels[i],
-                      style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 9,
+                ],
+              ),
+              if (normalValue != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _NormalCurvePainter(
+                        mean: normalValue.moyenne,
+                        standardDeviation: normalValue.ecartType,
+                        color: cs.tertiary,
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+            ],
+          ),
+        ),
+        if (normalValue != null || average != null) ...[
+          const SizedBox(height: 2),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 2,
+            children: [
+              if (normalValue != null)
+                Text(
+                  'Normale : moyenne ${_fmt(normalValue.moyenne)} · '
+                  'σ ${_fmt(normalValue.ecartType)}',
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              if (average != null)
+                Text(
+                  'Ta moyenne : ${_fmt(average)}',
+                  style: tt.labelSmall?.copyWith(
+                    color: cs.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
         ],
-      ),
+      ],
     );
   }
+}
+
+class _NormalCurvePainter extends CustomPainter {
+  final double mean;
+  final double standardDeviation;
+  final Color color;
+
+  const _NormalCurvePainter({
+    required this.mean,
+    required this.standardDeviation,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!standardDeviation.isFinite || standardDeviation <= 0) return;
+    const left = 4.0;
+    final right = size.width - 4;
+    const top = 16.0;
+    final bottom = size.height - 18;
+    final height = bottom - top;
+    if (right <= left || height <= 0) return;
+
+    double xFor(double value) {
+      final clamped = value.clamp(0.0, 20.0).toDouble();
+      return left + (right - left) * clamped / 20;
+    }
+
+    double yFor(double value) {
+      final z = (value - mean) / standardDeviation;
+      return bottom - height * math.exp(-0.5 * z * z);
+    }
+
+    final line = Path();
+    final fill = Path()..moveTo(xFor(0), bottom);
+    for (var i = 0; i <= 80; i++) {
+      final value = 20 * i / 80;
+      final x = xFor(value);
+      final y = yFor(value);
+      if (i == 0) {
+        line.moveTo(x, y);
+      } else {
+        line.lineTo(x, y);
+      }
+      fill.lineTo(x, y);
+    }
+    fill
+      ..lineTo(xFor(20), bottom)
+      ..close();
+
+    canvas.drawPath(fill, Paint()..color = color.withValues(alpha: 0.08));
+    canvas.drawPath(
+      line,
+      Paint()
+        ..color = color.withValues(alpha: 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _NormalCurvePainter oldDelegate) =>
+      oldDelegate.mean != mean ||
+      oldDelegate.standardDeviation != standardDeviation ||
+      oldDelegate.color != color;
 }
 
 class _ChartSeries {
