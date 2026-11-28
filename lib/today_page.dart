@@ -9,6 +9,7 @@ import 'colloscope.dart';
 import 'devoirs.dart';
 import 'edt.dart';
 import 'notes_store.dart';
+import 'subject_colors.dart';
 
 const _jours = [
   'lundi',
@@ -138,7 +139,9 @@ class _TodayPageState extends State<TodayPage> {
 
   Color _colorFor(String matiere, ColorScheme cs) {
     final seed = EdtColorStore.seedFor(_colors, matiere);
-    return seed == null ? cs.primary : Color(seed);
+    return seed == null
+        ? cs.primary
+        : subjectPalette(seed, cs.brightness).accent;
   }
 
   List<Cours> get _todayCours {

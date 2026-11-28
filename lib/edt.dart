@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/parse.dart';
 import 'colloscope.dart';
+import 'subject_colors.dart';
 
 const _jours = [
   'Lundi',
@@ -152,25 +153,6 @@ String? _recurrenceBadge(Cours c) => switch (_recurrenceOf(c)) {
   _CoursRecurrence.oddWeeks || _CoursRecurrence.evenWeeks => '1 sem. / 2',
   _CoursRecurrence.custom => 'Certaines sem.',
 };
-
-class _SubjectPalette {
-  final Color background;
-  final Color foreground;
-
-  const _SubjectPalette(this.background, this.foreground);
-}
-
-final Map<(int, Brightness), _SubjectPalette> _subjectPaletteCache = {};
-
-_SubjectPalette _subjectPalette(int seed, Brightness brightness) {
-  return _subjectPaletteCache.putIfAbsent((seed, brightness), () {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: Color(seed),
-      brightness: brightness,
-    );
-    return _SubjectPalette(scheme.primaryContainer, scheme.onPrimaryContainer);
-  });
-}
 
 class EDTPage extends StatefulWidget {
   final VoidCallback? onTimetableChanged;
@@ -1117,14 +1099,14 @@ class _WeekEventBlock extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final isKholle = event.isKholle;
     final palette = !isKholle && colorSeed != null
-        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        ? subjectPalette(colorSeed!, Theme.of(context).brightness)
         : null;
     final bg = isKholle
         ? cs.tertiaryContainer
-        : (palette?.background ?? cs.secondaryContainer);
+        : (palette?.container ?? cs.secondaryContainer);
     final fg = isKholle
         ? cs.onTertiaryContainer
-        : (palette?.foreground ?? cs.onSecondaryContainer);
+        : (palette?.onContainer ?? cs.onSecondaryContainer);
 
     return Material(
       color: bg,
@@ -1330,14 +1312,14 @@ class _DayEventBlock extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final isKholle = event.isKholle;
     final palette = !isKholle && colorSeed != null
-        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        ? subjectPalette(colorSeed!, Theme.of(context).brightness)
         : null;
     final background = isKholle
         ? cs.tertiaryContainer
-        : (palette?.background ?? cs.secondaryContainer);
+        : (palette?.container ?? cs.secondaryContainer);
     final foreground = isKholle
         ? cs.onTertiaryContainer
-        : (palette?.foreground ?? cs.onSecondaryContainer);
+        : (palette?.onContainer ?? cs.onSecondaryContainer);
     final badge = isKholle
         ? 'Khôlle'
         : (event.cours == null ? null : _recurrenceBadge(event.cours!));
@@ -1608,7 +1590,7 @@ class _EventSheet extends StatelessWidget {
     final date = event.date;
     final recurrence = event.recurrenceLabel;
     final palette = !isKholle && colorSeed != null
-        ? _subjectPalette(colorSeed!, Theme.of(context).brightness)
+        ? subjectPalette(colorSeed!, Theme.of(context).brightness)
         : null;
 
     return SingleChildScrollView(
@@ -1628,7 +1610,7 @@ class _EventSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isKholle
                       ? cs.tertiaryContainer
-                      : (palette?.background ?? cs.secondaryContainer),
+                      : (palette?.container ?? cs.secondaryContainer),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1636,7 +1618,7 @@ class _EventSheet extends StatelessWidget {
                   style: tt.labelMedium?.copyWith(
                     color: isKholle
                         ? cs.onTertiaryContainer
-                        : (palette?.foreground ?? cs.onSecondaryContainer),
+                        : (palette?.onContainer ?? cs.onSecondaryContainer),
                   ),
                 ),
               ),

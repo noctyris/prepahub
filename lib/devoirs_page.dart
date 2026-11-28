@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'devoirs.dart';
 import 'devoirs_notifications.dart';
 import 'edt.dart';
+import 'subject_colors.dart';
 import 'subjects.dart';
 
 const _moisCourts = [
@@ -166,9 +167,9 @@ class _DevoirsPageState extends State<DevoirsPage> {
     }
   }
 
-  Color? _subjectColorFor(String matiere) {
+  Color? _subjectColorFor(String matiere, Brightness brightness) {
     final seed = EdtColorStore.seedFor(_subjectColors, matiere);
-    return seed == null ? null : Color(seed);
+    return seed == null ? null : subjectPalette(seed, brightness).accent;
   }
 
   Future<void> _refreshSubjectColors() async {
@@ -752,7 +753,10 @@ class _DevoirsPageState extends State<DevoirsPage> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final palette = _paletteFor(cs, devoir.type);
-    final subjectColor = _subjectColorFor(devoir.matiere);
+    final subjectColor = _subjectColorFor(
+      devoir.matiere,
+      Theme.of(context).brightness,
+    );
     final accent = subjectColor ?? palette.container;
     final details = [
       if (devoir.matiere.isNotEmpty) devoir.matiere,
@@ -889,7 +893,10 @@ class _DevoirsPageState extends State<DevoirsPage> {
   }
 
   Future<void> _openDetail(Devoir devoir) async {
-    final subjectColor = _subjectColorFor(devoir.matiere);
+    final subjectColor = _subjectColorFor(
+      devoir.matiere,
+      Theme.of(context).brightness,
+    );
     final edit = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'api/parse.dart';
 import 'notes_stats.dart';
+import 'subject_colors.dart';
 
 String _fmt(double? value) {
   if (value == null) return '—';
@@ -50,7 +51,9 @@ class _NotesOverviewState extends State<NotesOverview> {
 
   Color _subjectColor(String subject, ColorScheme cs) {
     final seed = widget.subjectSeeds[subject];
-    return seed == null ? cs.primary : Color(seed);
+    return seed == null
+        ? cs.primary
+        : subjectPalette(seed, cs.brightness).accent;
   }
 
   Future<void> _editCoefficients() async {
