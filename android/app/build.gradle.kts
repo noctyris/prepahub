@@ -26,12 +26,11 @@ android {
     defaultConfig {
         applicationId = "fr.circumpolar.prepahub"
         multiDexEnabled = true
-        val versionTag = (System.getenv("GIT_TAG") ?: "0.2.0").removePrefix("v").substringBefore("-")
+        val versionTag = (System.getenv("GIT_TAG") ?: flutter.versionName)
+            .removePrefix("v")
+            .substringBefore("-")
         versionName = versionTag
-        versionCode = System.getenv("BUILD_NUMBER")?.toIntOrNull()
-            ?: versionTag.split(".").let { p ->
-                p[0].toInt() * 10000 + p[1].toInt() * 100 + (p.getOrNull(2)?.toIntOrNull() ?: 0)
-            }
+        versionCode = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: flutter.versionCode
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // flutter_secure_storage et local_auth exigent Android 24 ou plus.

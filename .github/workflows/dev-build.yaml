@@ -6,7 +6,23 @@ on:
   pull_request:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+
   build-apk:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -19,9 +35,6 @@ jobs:
 
       - name: Resolve dependencies
         run: flutter pub get
-
-      - name: Analyze
-        run: flutter analyze
 
       - name: Build APK (debug)
         run: flutter build apk --debug

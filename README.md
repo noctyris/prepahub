@@ -10,6 +10,9 @@
       <img src="https://img.shields.io/github/v/release/noctyris/prepahub?display_name=tag&sort=semver" alt="Latest release">
     </a>
     <img src="https://img.shields.io/badge/Android%20%7C%20Linux%20%7C%20macOS-3F51B5?logo=flutter&logoColor=white" alt="Android, Linux and macOS">
+    <a href="LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
+    </a>
   </p>
   <p><strong>English</strong> · <a href="README.fr.md">🇫🇷 Français</a></p>
 </div>
@@ -93,9 +96,10 @@ flutter build linux --release
 flutter build macos --release
 ```
 
-Pushing a `v*` tag triggers the `Release Build` workflow. Bump the `version`
-field in `pubspec.yaml` before tagging so the app reports the same version as
-the release.
+Pushing a `v*` tag triggers the `Release Build` workflow. The workflow uses the
+tag as the app version and the workflow run number as the build number, so
+release artifacts stay aligned with the tag. Keep `version` in `pubspec.yaml`
+in sync for local builds.
 
 ## 🔒 Privacy
 
@@ -111,7 +115,7 @@ lock uses the device's biometric or system authentication.
 
 ## 📄 License
 
-License to be determined.
+PrépaHub is released under the [MIT License](LICENSE).
 
 ---
 

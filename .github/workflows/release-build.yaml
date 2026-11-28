@@ -4,8 +4,25 @@ on:
   push:
     tags: ["v*"]
 
+env:
+  GIT_TAG: ${{ github.ref_name }}
+  BUILD_NUMBER: ${{ github.run_number }}
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
   build-android:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,7 +35,6 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter analyze
       - name: Prepare signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -38,10 +54,10 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
       - name: Build release APK
-        run: flutter build apk --release
-        env:
-          GIT_TAG: ${{ github.ref_name }}
-          BUILD_NUMBER: ${{ github.run_number }}
+        run: >-
+          flutter build apk --release
+          --build-name="${GIT_TAG#v}"
+          --build-number="$BUILD_NUMBER"
       - name: Prepare artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk prepahub-${{ github.ref_name }}.apk
       - name: Upload APK
@@ -52,6 +68,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -65,7 +82,10 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev
       - run: flutter config --enable-linux-desktop
       - run: flutter pub get
-      - run: flutter build linux --release
+      - run: >-
+          flutter build linux --release
+          --build-name="${GIT_TAG#v}"
+          --build-number="$BUILD_NUMBER"
       - name: Package
         run: tar -czf "prepahub-${GITHUB_REF_NAME}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
       - name: Upload Linux build
@@ -76,6 +96,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: test
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -85,7 +106,10 @@ jobs:
           cache: true
       - run: flutter config --enable-macos-desktop
       - run: flutter pub get
-      - run: flutter build macos --release
+      - run: >-
+          flutter build macos --release
+          --build-name="${GIT_TAG#v}"
+          --build-number="$BUILD_NUMBER"
       - name: Package
         run: |
           ditto -c -k --sequesterRsrc --keepParent \

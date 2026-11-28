@@ -10,6 +10,9 @@
       <img src="https://img.shields.io/github/v/release/noctyris/prepahub?display_name=tag&sort=semver" alt="Dernière version">
     </a>
     <img src="https://img.shields.io/badge/Android%20%7C%20Linux%20%7C%20macOS-3F51B5?logo=flutter&logoColor=white" alt="Android, Linux et macOS">
+    <a href="LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Licence MIT">
+    </a>
   </p>
   <p><a href="README.md">🇬🇧 English</a> · <strong>Français</strong></p>
 </div>
@@ -93,9 +96,10 @@ flutter build linux --release
 flutter build macos --release
 ```
 
-Pousser un tag `v*` déclenche le workflow `Release Build`. Pense à mettre à
-jour le champ `version` de `pubspec.yaml` avant de taguer pour que
-l'application affiche la même version que la release.
+Pousser un tag `v*` déclenche le workflow `Release Build`. Le workflow utilise
+le tag comme version de l'application et le numéro du run comme build number,
+ainsi les artefacts restent alignés sur le tag. Garde le champ `version` de
+`pubspec.yaml` à jour pour les builds locaux.
 
 ## 🔒 Confidentialité
 
@@ -112,7 +116,7 @@ biométrie ou l'authentification système de l'appareil.
 
 ## 📄 Licence
 
-Licence à définir.
+PrépaHub est distribué sous [licence MIT](LICENSE).
 
 ---
 
